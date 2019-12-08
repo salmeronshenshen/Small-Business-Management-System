@@ -21,7 +21,6 @@ const getProductSticker = (productName) => {
     name.includes("powder") ||
     name.includes("foundation") ||
     name.includes("concealer") ||
-    name.includes("highlighter") ||
     name.includes("makeup")
   ) return "✨";
 
@@ -77,7 +76,6 @@ const canHaveShades = (product) => {
     name.includes("face powder") ||
     name.includes("foundation") ||
     name.includes("concealer") ||
-    name.includes("highlighter") ||
     name.includes("makeup")
   );
 };
