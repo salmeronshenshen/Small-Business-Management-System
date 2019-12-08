@@ -608,25 +608,65 @@ const defaultShades = {
     "Nude",
     "Berry"
   ],
+
   "Lip Gloss": [
     "Clear",
     "Pink",
     "Peach",
     "Red"
   ],
+
   "Matte Lipstick": [
     "Classic Red",
     "Rose",
     "Nude",
     "Wine"
+  ],
+
+  "Blush On": [
+    "Baby Pink",
+    "Peach",
+    "Coral",
+    "Rose",
+    "Mauve"
+  ],
+
+  "Face Powder": [
+    "Ivory",
+    "Natural",
+    "Beige",
+    "Honey"
+  ],
+
+  "Foundation": [
+    "Porcelain",
+    "Ivory",
+    "Natural",
+    "Warm Beige",
+    "Honey"
+  ],
+
+  "Concealer": [
+    "Light",
+    "Natural",
+    "Medium",
+    "Beige",
+    "Warm"
+  ],
+
+  "JMCY": [
+    "Cherry Red",
+    "Rose Pink",
+    "Nude",
+    "Peach",
+    "Berry"
   ]
 };
 
-const insertShade = db.prepare(`
-  INSERT OR IGNORE INTO product_shades (
-    product_id,
-    shade_name
-  )
+// INSERT DEFAULT SHADES
+const insertDefaultShade = db.prepare(`
+  INSERT OR IGNORE INTO product_shades
+  (product_id, shade_name)
   VALUES (?, ?)
 `);
 
@@ -638,13 +678,11 @@ for (const productName in defaultShades) {
   `).get(productName);
 
   if (product) {
-    defaultShades[productName].forEach(shade => {
-      insertShade.run(product.product_id, shade);
+    defaultShades[productName].forEach((shade) => {
+      insertDefaultShade.run(product.product_id, shade);
     });
   }
 }
-
-console.log("Beauty Finds categories and products loaded!");
 
 // =====================================
 // CONNECT EXISTING CUSTOMER ACCOUNTS

@@ -696,3 +696,31 @@ input:focus, select:focus, textarea:focus,
   .customer-account-details p { flex-direction: column; gap: 4px; }
   .customer-order-header { align-items: flex-start; flex-direction: column; }
 }
+/* PRODUCTS PAGE WELCOME BANNER */
+.products-page .module-banner,
+.products-page .welcome-banner,
+.products-banner {
+  background: linear-gradient(115deg, #C987A0, #E1B1C1);
+  border: 1px solid #E8C6D2;
+  border-radius: 13px;
+  color: #FFFFFF;
+  padding: 20px 24px;
+}
+
+.products-page .module-banner h2,
+.products-page .welcome-banner h2,
+.products-banner h2 {
+  color: #FFFFFF;
+}
+
+.products-page .module-banner p,
+.products-page .welcome-banner p,
+.products-banner p {
+  color: #FFF7FA;
+}
+
+.products-page .module-banner-icon,
+.products-page .welcome-banner .banner-icon,
+.products-banner .banner-icon {
+  color: #FFFFFF;
+}
