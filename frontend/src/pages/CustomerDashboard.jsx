@@ -56,6 +56,22 @@ const getProductSticker = (productName) => {
   return "💗";
 };
 
+// CHECK IF PRODUCT NEEDS SHADES
+const canHaveShades = (product) => {
+  const name = String(product.product_name || "").toLowerCase();
+  const category = String(product.category_name || "").toLowerCase();
+
+  return (
+    category === "lip products" ||
+    category === "face makeup" ||
+    name.includes("lip") ||
+    name.includes("lippie") ||
+    name.includes("blush") ||
+    name.includes("foundation") ||
+    name.includes("concealer")
+  );
+};
+
 function CustomerDashboard() {
   const navigate = useNavigate();
 
@@ -180,14 +196,20 @@ function CustomerDashboard() {
     }
 
     const productShades = product.shades || [];
-    const selectedShade = selectedShades[product.product_id] || "";
 
-    if (productShades.length > 0 && !selectedShade) {
-      showMessage("Please select a product shade first.", "error");
-      return;
-    }
+const hasShadeOptions =
+  canHaveShades(product) && productShades.length > 0;
 
-    const shadeValue = selectedShade || null;
+const selectedShade = hasShadeOptions
+  ? selectedShades[product.product_id] || ""
+  : "";
+
+if (hasShadeOptions && !selectedShade) {
+  showMessage("Please select a product shade first.", "error");
+  return;
+}
+
+const shadeValue = selectedShade || null;
 
     const existingItem = cart.find(
       item =>
@@ -358,7 +380,10 @@ function CustomerDashboard() {
   // PRODUCT CARD
   const renderProductCard = (product) => {
     const productShades = product.shades || [];
-
+  
+    const hasShadeOptions =
+      canHaveShades(product) && productShades.length > 0;
+  
     return (
       <div
         className="customer-product-card"
@@ -380,7 +405,7 @@ function CustomerDashboard() {
             : "Out of Stock"}
         </small>
 
-        {productShades.length > 0 && (
+        {hasShadeOptions && (
           <div className="customer-shade-selection">
             <label htmlFor={`shade-${product.product_id}`}>
               🎨 Select Shade:

@@ -2285,12 +2285,15 @@ app.post(
 
       const getProduct = db.prepare(`
         SELECT
-          product_id,
-          product_name,
-          price,
-          stock
-        FROM products
-        WHERE product_id = ?
+          p.product_id,
+          p.product_name,
+          p.price,
+          p.stock,
+          c.category_name
+        FROM products p
+        LEFT JOIN categories c
+          ON p.category_id = c.category_id
+        WHERE p.product_id = ?
       `);
 
       const getProductShades = db.prepare(`
@@ -2314,43 +2317,55 @@ app.post(
               `Not enough stock for ${product.product_name}. Available stock: ${product.stock}.`
           });
         }
+// CHECK IF PRODUCT IS ALLOWED TO HAVE SHADES
+const productName = product.product_name.toLowerCase();
+const categoryName = (
+  product.category_name || ""
+).toLowerCase();
 
-        // CHECK IF PRODUCT HAS AVAILABLE SHADES
-        const availableShades = getProductShades.all(
-          product.product_id
-        );
+const canHaveShades =
+  categoryName === "lip products" ||
+  categoryName === "face makeup" ||
+  productName.includes("lip tint") ||
+  productName.includes("lip gloss") ||
+  productName.includes("lipstick") ||
+  productName.includes("lippie") ||
+  productName.includes("blush") ||
+  productName.includes("foundation") ||
+  productName.includes("concealer");
 
-        let selectedShade = null;
+// GET AVAILABLE SHADES
+const availableShades = getProductShades.all(
+  product.product_id
+);
 
-        if (availableShades.length > 0) {
-          if (!item.shade) {
-            return res.status(400).json({
-              message:
-                `Please select a shade for ${product.product_name}.`
-            });
-          }
+let selectedShade = null;
 
-          const matchingShade = availableShades.find(
-            shade =>
-              shade.shade_name.toLowerCase() ===
-              item.shade.toLowerCase()
-          );
+// VALIDATE SHADES ONLY FOR ALLOWED PRODUCTS
+if (canHaveShades && availableShades.length > 0) {
 
-          if (!matchingShade) {
-            return res.status(400).json({
-              message:
-                `Invalid shade selected for ${product.product_name}.`
-            });
-          }
+  if (!item.shade) {
+    return res.status(400).json({
+      message:
+        `Please select a shade for ${product.product_name}.`
+    });
+  }
 
-          selectedShade = matchingShade.shade_name;
+  const matchingShade = availableShades.find(
+    shade =>
+      shade.shade_name.toLowerCase() ===
+      item.shade.toLowerCase()
+  );
 
-        } else if (item.shade) {
-          return res.status(400).json({
-            message:
-              `${product.product_name} does not have shade options.`
-          });
-        }
+  if (!matchingShade) {
+    return res.status(400).json({
+      message:
+        `Invalid shade selected for ${product.product_name}.`
+    });
+  }
+
+  selectedShade = matchingShade.shade_name;
+}
 
         const subtotal = Number(product.price) * item.quantity;
 

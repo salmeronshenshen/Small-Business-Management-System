@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -29,7 +30,7 @@ function Login() {
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             username: username.trim(),
             password: password
           })
@@ -53,12 +54,13 @@ function Login() {
       localStorage.setItem("user", JSON.stringify(data.user));
 
       // REDIRECT BASED ON USER ROLE
-      if (
-        data.user.role === "Admin" ||
-        data.user.role === "Staff"
-      ) {
+      const role = String(data.user.role || "")
+        .trim()
+        .toLowerCase();
+
+      if (role === "admin" || role === "staff") {
         navigate("/dashboard");
-      } else if (data.user.role === "Customer") {
+      } else if (role === "customer") {
         navigate("/customer-dashboard");
       } else {
         localStorage.removeItem("token");
@@ -75,102 +77,197 @@ function Login() {
   };
 
   return (
-    <div className="sb-auth-container">
+    <div className="sb-login-page">
 
-      <div className="sb-decoration heart-one">♡</div>
-      <div className="sb-decoration heart-two">♥</div>
-      <div className="sb-decoration heart-three">♡</div>
-      <div className="sb-decoration heart-four">♥</div>
-      <div className="sb-decoration sparkle-one">✦</div>
-      <div className="sb-decoration sparkle-two">✦</div>
+      <div className="sb-login-card">
 
-      <form className="sb-auth-card" onSubmit={handleLogin}>
+        {/* LEFT BRANDING PANEL */}
+        <div className="sb-login-brand-panel">
 
-        <div className="sb-store-image">
-          <img src="/store.png" alt="Small Business Store" />
-        </div>
-
-        <div className="sb-brand">
-          <h2>Small Business</h2>
-        </div>
-
-        <h1>Welcome!</h1>
-
-        <p className="sb-subtitle">
-          Sign in to your small business account.
-        </p>
-
-        <div className="sb-divider">
-          <span></span>
-          <b>♥</b>
-          <span></span>
-        </div>
-
-        {message && (
-          <div className="sb-message">
-            {message}
+          <div className="sb-brand-logo">
+            BF
           </div>
-        )}
 
-        <div className="sb-input-group">
-          <label>
-            <span className="sb-field-icon">♟</span>
-            Username
-          </label>
+          <p className="sb-brand-label">
+            YOUR BEAUTY DESTINATION
+          </p>
 
-          <input
-            type="text"
-            placeholder="Enter username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
+          <h1 className="sb-brand-title">
+            Beauty Finds<span>.</span>
+          </h1>
 
-        <div className="sb-input-group">
-          <label>
-            <span className="sb-field-icon">🔒</span>
-            Password
-          </label>
+          <p className="sb-brand-description">
+            Discover your beauty. Express your style.
+            Find the products that make you feel confident.
+          </p>
 
-          <div className="sb-password-field">
-            <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Enter password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <div className="sb-brand-art">
 
-            <button
-              type="button"
-              className="sb-toggle-password"
-              onClick={() => setShowPassword(!showPassword)}
-              aria-label={
-                showPassword ? "Hide password" : "Show password"
-              }
-            >
-              {showPassword ? "🙈" : "👁"}
-            </button>
+            <div className="sb-art-circle"></div>
+
+            <div className="sb-art-product sb-art-one">
+              💄
+            </div>
+
+            <div className="sb-art-product sb-art-two">
+              🧴
+            </div>
+
+            <div className="sb-art-product sb-art-three">
+              ✨
+            </div>
+
+            <div className="sb-art-product sb-art-four">
+              🌸
+            </div>
+
           </div>
+
+          <div className="sb-brand-footer">
+            BEAUTY • CONFIDENCE • YOU
+          </div>
+
         </div>
 
-        <button
-          type="submit"
-          className="sb-login-button"
-          disabled={loading}
-        >
-          {loading ? "Logging in..." : "Login"}
-        </button>
+        {/* RIGHT LOGIN PANEL */}
+        <div className="sb-login-form-panel">
 
-        <p className="sb-auth-link">
-          Don't have an account?
-          <Link to="/register">Register</Link>
-        </p>
+          <div className="sb-login-top">
 
-      </form>
+            <span className="sb-login-small-logo">
+              BF.
+            </span>
+
+            <span className="sb-secure-label">
+              <span className="sb-secure-dot"></span>
+              SECURE LOGIN
+            </span>
+
+          </div>
+
+          <div className="sb-login-content">
+
+            <div className="sb-login-heading">
+
+              <p className="sb-welcome-label">
+                WELCOME BACK
+              </p>
+
+              <h2>Sign in to your account</h2>
+
+              <p>
+                Enter your account details to continue
+                shopping with Beauty Finds.
+              </p>
+
+            </div>
+
+            {message && (
+              <div className="sb-login-message">
+                {message}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin}>
+
+              {/* USERNAME */}
+              <div className="sb-form-group">
+
+                <label htmlFor="sb-username">
+                  Username
+                </label>
+
+                <div className="sb-input-wrapper">
+
+                  <span className="sb-input-icon">
+                    ♙
+                  </span>
+
+                  <input
+                    id="sb-username"
+                    type="text"
+                    placeholder="Enter your username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    autoComplete="username"
+                    required
+                  />
+
+                </div>
+
+              </div>
+
+              {/* PASSWORD */}
+              <div className="sb-form-group">
+
+                <label htmlFor="sb-password">
+                  Password
+                </label>
+
+                <div className="sb-input-wrapper">
+
+                  <span className="sb-input-icon">
+                    🔒
+                  </span>
+
+                  <input
+                    id="sb-password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="sb-password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+
+                </div>
+
+              </div>
+
+              {/* LOGIN BUTTON */}
+              <button
+                type="submit"
+                className="sb-login-submit"
+                disabled={loading}
+              >
+                {loading ? "Signing in..." : "Sign In"}
+
+                {!loading && <span>→</span>}
+              </button>
+
+            </form>
+
+            <div className="sb-login-register">
+              Don't have an account?
+              <Link to="/register">
+                Create an account
+              </Link>
+            </div>
+
+          </div>
+
+          <div className="sb-login-bottom">
+            <span>© 2026 Beauty Finds</span>
+            <span>Made for your beauty journey ♡</span>
+          </div>
+
+        </div>
+
+      </div>
+
     </div>
   );
 }
 
-export default Login; 
+export default Login;

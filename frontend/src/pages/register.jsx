@@ -10,10 +10,18 @@ function Register() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setMessage("");
+
+    if (!fullname.trim() || !username.trim() || !password) {
+      setMessage("Please complete all fields.");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const response = await fetch(
@@ -24,9 +32,9 @@ function Register() {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            fullname,
-            username,
-            password
+            fullname: fullname.trim(),
+            username: username.trim(),
+            password: password
           })
         }
       );
@@ -37,134 +45,245 @@ function Register() {
         alert("Registration successful! Please login.");
         navigate("/");
       } else {
-        setMessage(data.message);
+        setMessage(
+          data.message || "Registration failed. Please try again."
+        );
       }
+
     } catch (error) {
-      setMessage("Cannot connect to server.");
+      console.error("Registration error:", error);
+      setMessage("Cannot connect to server. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="sb-auth-container">
+    <div className="sb-login-page sb-register-page">
 
-      {/* BACKGROUND DECORATIONS */}
-      <div className="sb-decoration heart-one">♡</div>
-      <div className="sb-decoration heart-two">♥</div>
-      <div className="sb-decoration heart-three">♡</div>
-      <div className="sb-decoration heart-four">♥</div>
-      <div className="sb-decoration sparkle-one">✦</div>
-      <div className="sb-decoration sparkle-two">✦</div>
+      <div className="sb-login-card sb-register-card">
 
-      <form className="sb-auth-card" onSubmit={handleRegister}>
+        {/* LEFT BRANDING PANEL */}
+        <div className="sb-login-brand-panel">
 
-        {/* STORE IMAGE */}
-        <div className="sb-store-image">
-          <img
-            src="/store.png"
-            alt="Small Business Store"
-          />
-        </div>
-
-        {/* BRAND */}
-        <div className="sb-brand">
-          <h2>Small Business</h2>
-          <p>By Shen</p>
-        </div>
-
-        {/* HEADING */}
-        <h1 className="sb-register-heading">
-          Create Your Account
-        </h1>
-
-        <p className="sb-subtitle">
-          Join Small Business and grow your business.
-        </p>
-
-        {/* HEART DIVIDER */}
-        <div className="sb-divider">
-          <span></span>
-          <b>♥</b>
-          <span></span>
-        </div>
-
-        {message && (
-          <div className="sb-message">
-            {message}
+          <div className="sb-brand-logo">
+            BF
           </div>
-        )}
 
-        {/* FULL NAME */}
-        <div className="sb-input-group">
-          <label>
-            <span className="sb-field-icon">♟</span>
-            Full Name
-          </label>
+          <p className="sb-brand-label">
+            YOUR BEAUTY DESTINATION
+          </p>
 
-          <input
-            type="text"
-            placeholder="Enter your full name"
-            value={fullname}
-            onChange={(e) => setFullname(e.target.value)}
-            required
-          />
-        </div>
+          <h1 className="sb-brand-title">
+            Beauty Finds<span>.</span>
+          </h1>
 
-        {/* USERNAME */}
-        <div className="sb-input-group">
-          <label>
-            <span className="sb-field-icon">♟</span>
-            Username
-          </label>
+          <p className="sb-brand-description">
+            Discover your beauty. Express your style.
+            Find the products that make you feel confident.
+          </p>
 
-          <input
-            type="text"
-            placeholder="Enter username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
+          {/* BEAUTY DECORATIONS */}
+          <div className="sb-brand-art">
 
-        {/* PASSWORD */}
-        <div className="sb-input-group">
-          <label>
-            <span className="sb-field-icon">🔒</span>
-            Password
-          </label>
+            <div className="sb-art-circle"></div>
 
-          <div className="sb-password-field">
-            <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Enter password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength="6"
-            />
+            <div className="sb-art-product sb-art-one">
+              💄
+            </div>
 
-            <button
-              type="button"
-              className="sb-toggle-password"
-              onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
-            >
-              {showPassword ? "🙈" : "👁"}
-            </button>
+            <div className="sb-art-product sb-art-two">
+              🧴
+            </div>
+
+            <div className="sb-art-product sb-art-three">
+              ✨
+            </div>
+
+            <div className="sb-art-product sb-art-four">
+              🌸
+            </div>
+
           </div>
+
+          <div className="sb-brand-footer">
+            BEAUTY • CONFIDENCE • YOU
+          </div>
+
         </div>
 
-        {/* REGISTER BUTTON */}
-        <button type="submit" className="sb-login-button">
-          Register
-        </button>
+        {/* RIGHT REGISTER PANEL */}
+        <div className="sb-login-form-panel">
 
-        {/* LOGIN LINK */}
-        <p className="sb-auth-link">
-          Already have an account?
-          <Link to="/">Login</Link>
-        </p>
+          <div className="sb-login-top">
 
-      </form>
+            <span className="sb-login-small-logo">
+              BF.
+            </span>
+
+            <span className="sb-secure-label">
+              <span className="sb-secure-dot"></span>
+              CREATE ACCOUNT
+            </span>
+
+          </div>
+
+          <div className="sb-login-content">
+
+            {/* HEADING */}
+            <div className="sb-login-heading">
+
+              <p className="sb-welcome-label">
+                JOIN BEAUTY FINDS
+              </p>
+
+              <h2>Create your account</h2>
+
+              <p>
+                Sign up today and discover your favorite
+                beauty products.
+              </p>
+
+            </div>
+
+            {/* ERROR MESSAGE */}
+            {message && (
+              <div className="sb-login-message">
+                {message}
+              </div>
+            )}
+
+            <form onSubmit={handleRegister}>
+
+              {/* FULL NAME */}
+              <div className="sb-form-group">
+
+                <label htmlFor="sb-fullname">
+                  Full Name
+                </label>
+
+                <div className="sb-input-wrapper">
+
+                  <span className="sb-input-icon">
+                    ♙
+                  </span>
+
+                  <input
+                    id="sb-fullname"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={fullname}
+                    onChange={(e) => setFullname(e.target.value)}
+                    autoComplete="name"
+                    required
+                  />
+
+                </div>
+
+              </div>
+
+              {/* USERNAME */}
+              <div className="sb-form-group">
+
+                <label htmlFor="sb-register-username">
+                  Username
+                </label>
+
+                <div className="sb-input-wrapper">
+
+                  <span className="sb-input-icon">
+                    ♙
+                  </span>
+
+                  <input
+                    id="sb-register-username"
+                    type="text"
+                    placeholder="Choose a username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    autoComplete="username"
+                    required
+                  />
+
+                </div>
+
+              </div>
+
+              {/* PASSWORD */}
+              <div className="sb-form-group">
+
+                <label htmlFor="sb-register-password">
+                  Password
+                </label>
+
+                <div className="sb-input-wrapper">
+
+                  <span className="sb-input-icon">
+                    🔒
+                  </span>
+
+                  <input
+                    id="sb-register-password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Create your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="sb-password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+
+                </div>
+
+                <p className="sb-register-hint">
+                  Password must be at least 6 characters.
+                </p>
+
+              </div>
+
+              {/* REGISTER BUTTON */}
+              <button
+                type="submit"
+                className="sb-login-submit"
+                disabled={loading}
+              >
+                {loading ? "Creating account..." : "Create Account"}
+
+                {!loading && <span>→</span>}
+              </button>
+
+            </form>
+
+            {/* LOGIN LINK */}
+            <div className="sb-login-register">
+              Already have an account?
+              <Link to="/">
+                Sign In
+              </Link>
+            </div>
+
+          </div>
+
+          <div className="sb-login-bottom">
+            <span>© 2026 Beauty Finds</span>
+            <span>Made for your beauty journey ♡</span>
+          </div>
+
+        </div>
+
+      </div>
+
     </div>
   );
 }
