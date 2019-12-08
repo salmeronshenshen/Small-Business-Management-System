@@ -5,25 +5,25 @@
 
 /* 1. GLOBAL THEME */
 :root {
-  --sb-primary: #895064;
-  --sb-primary-dark: #67394d;
-  --sb-primary-light: #f3e5ea;
-  --sb-accent: #b87991;
-  --sb-page: #f8f5f6;
-  --sb-surface: #ffffff;
-  --sb-surface-soft: #fcf9fa;
-  --sb-text: #44343b;
-  --sb-muted: #8e7d84;
-  --sb-border: #eadfe3;
-  --sb-danger: #bd5262;
-  --sb-danger-bg: #fff0f1;
-  --sb-success: #347b58;
-  --sb-success-bg: #eaf6ef;
-  --sb-warning: #a8752d;
-  --sb-warning-bg: #fff5e5;
+  --sb-primary: #D96C91;
+  --sb-primary-dark: #B84F76;
+  --sb-primary-light: #FCE4EC;
+  --sb-accent: #E89AB3;
+  --sb-page: #FFF7FA;
+  --sb-surface: #FFFFFF;
+  --sb-surface-soft: #FFFAFC;
+  --sb-text: #513B45;
+  --sb-muted: #9B7F8A;
+  --sb-border: #F2D5E0;
+  --sb-danger: #BD5262;
+  --sb-danger-bg: #FFF0F1;
+  --sb-success: #347B58;
+  --sb-success-bg: #EAF6EF;
+  --sb-warning: #A8752D;
+  --sb-warning-bg: #FFF5E5;
   --sb-radius: 14px;
-  --sb-shadow: 0 5px 20px rgba(75, 43, 55, .06);
-  --sb-shadow-hover: 0 12px 28px rgba(75, 43, 55, .11);
+  --sb-shadow: 0 5px 20px rgba(217, 108, 145, .08);
+  --sb-shadow-hover: 0 12px 28px rgba(217, 108, 145, .15);
 }
 * {
   margin: 0;
@@ -219,7 +219,7 @@ a { color: inherit; }
   padding: 48px;
   overflow: hidden;
   color: #fff;
-  background: linear-gradient(145deg, #9d687b, #754457 62%, #533244);
+  background: linear-gradient(145deg, #F0A9C0, #D96C91 62%, #B84F76);
 }
 .sb-brand-logo {
   width: 50px; height: 50px;
@@ -526,14 +526,14 @@ input:focus, select:focus, textarea:focus,
 /* 14. CUSTOMER DASHBOARD */
 .dashboard-sidebar {
   width: 250px; min-width: 250px; display: flex; flex-direction: column;
-  padding: 25px 17px; background: var(--sb-primary-dark); color: #fff;
+  padding: 25px 17px; background: #D96C91;
 }
 .dashboard-sidebar h2 { margin-bottom: 5px; font-size: 23px; }
 .sidebar-subtitle { margin-bottom: 30px; color: #e9d8df; font-size: 11px; }
 .dashboard-sidebar nav { display: flex; flex-direction: column; gap: 7px; }
 .dashboard-sidebar nav a, .dashboard-sidebar nav button {
   display: block; width: 100%; padding: 11px 12px; border: 0; border-radius: 9px;
-  background: transparent; color: #fff; text-align: left; text-decoration: none; font-size: 13px; transition: .2s;
+  background: #D96C91; text-align: left; text-decoration: none; font-size: 13px; transition: .2s;
 }
 .dashboard-sidebar nav a:hover, .dashboard-sidebar nav a.active,
 .dashboard-sidebar nav button:hover, .dashboard-sidebar nav button.active { background: rgba(255,255,255,.16); }
