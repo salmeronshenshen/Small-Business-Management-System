@@ -93,7 +93,7 @@ function Login() {
           </p>
 
           <h1 className="sb-brand-title">
-            Beauty Finds<span>.</span>
+            Beauty Finds♥<span>.</span>
           </h1>
 
           <p className="sb-brand-description">
