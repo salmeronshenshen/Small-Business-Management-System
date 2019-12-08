@@ -56,6 +56,24 @@ const getProductSticker = (productName) => {
   return "💗";
 };
 
+// CHECK IF PRODUCT CAN HAVE SHADES
+const canHaveShades = (product) => {
+  const name = product.product_name.toLowerCase();
+  const category = (product.category_name || "").toLowerCase();
+
+  return (
+    category === "lip products" ||
+    category === "face makeup" ||
+    name.includes("lip tint") ||
+    name.includes("lip gloss") ||
+    name.includes("lipstick") ||
+    name.includes("lippie") ||
+    name.includes("blush") ||
+    name.includes("foundation") ||
+    name.includes("concealer")
+  );
+};
+
 function Products() {
   const navigate = useNavigate();
 
@@ -284,6 +302,10 @@ function Products() {
 
   // OPEN SHADE MANAGEMENT
   const handleOpenShades = async (product) => {
+    if (!canHaveShades(product)) {
+      return;
+    }
+  
     setSelectedProduct(product);
     setShades([]);
     setShadeName("");
@@ -695,13 +717,15 @@ function Products() {
                               ✏️ Edit
                             </button>
 
-                            <button
-                              type="button"
-                              className="products-shade-button"
-                              onClick={() => handleOpenShades(product)}
-                            >
-                              🎨 Shades
-                            </button>
+                            {canHaveShades(product) && (
+  <button
+    type="button"
+    className="products-shade-button"
+    onClick={() => handleOpenShades(product)}
+  >
+    🎨 Shades
+  </button>
+)}
 
                             <button
                               type="button"
