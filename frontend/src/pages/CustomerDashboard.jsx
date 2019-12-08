@@ -2,6 +2,60 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+// PRODUCT STICKERS
+const getProductSticker = (productName) => {
+  const name = productName.toLowerCase();
+
+  if (
+    name.includes("lip") ||
+    name.includes("tint") ||
+    name.includes("gloss") ||
+    name.includes("lipstick")
+  ) return "💄";
+
+  if (
+    name.includes("blush") ||
+    name.includes("powder") ||
+    name.includes("foundation") ||
+    name.includes("concealer") ||
+    name.includes("highlighter")
+  ) return "✨";
+
+  if (
+    name.includes("cleanser") ||
+    name.includes("toner") ||
+    name.includes("serum") ||
+    name.includes("moisturizer") ||
+    name.includes("sunscreen")
+  ) return "🧴";
+
+  if (
+    name.includes("mascara") ||
+    name.includes("eyeliner") ||
+    name.includes("eyeshadow") ||
+    name.includes("eyebrow") ||
+    name.includes("eyelash")
+  ) return "👁️";
+
+  if (
+    name.includes("lotion") ||
+    name.includes("scrub") ||
+    name.includes("body") ||
+    name.includes("mist")
+  ) return "🌸";
+
+  if (
+    name.includes("brush") ||
+    name.includes("blender") ||
+    name.includes("puff") ||
+    name.includes("mirror") ||
+    name.includes("pouch") ||
+    name.includes("hairclip")
+  ) return "🎀";
+
+  return "💗";
+};
+
 function CustomerDashboard() {
   const navigate = useNavigate();
 
@@ -9,6 +63,7 @@ function CustomerDashboard() {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [cart, setCart] = useState([]);
+  const [selectedShades, setSelectedShades] = useState({});
   const [activeSection, setActiveSection] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -23,7 +78,10 @@ function CustomerDashboard() {
       localStorage.getItem("user") || "{}"
     );
 
-    if (!token || savedUser.role !== "Customer") {
+    if (
+      !token ||
+      String(savedUser.role || "").toLowerCase() !== "customer"
+    ) {
       navigate("/");
       return;
     }
@@ -43,18 +101,21 @@ function CustomerDashboard() {
         Authorization: `Bearer ${token}`
       };
 
-      const [productResponse, orderResponse, profileResponse] =
-        await Promise.all([
-          fetch("http://localhost:5000/api/customer/products", {
-            headers
-          }),
-          fetch("http://localhost:5000/api/customer/orders", {
-            headers
-          }),
-          fetch("http://localhost:5000/api/profile", {
-            headers
-          })
-        ]);
+      const [
+        productResponse,
+        orderResponse,
+        profileResponse
+      ] = await Promise.all([
+        fetch("http://localhost:5000/api/customer/products", {
+          headers
+        }),
+        fetch("http://localhost:5000/api/customer/orders", {
+          headers
+        }),
+        fetch("http://localhost:5000/api/profile", {
+          headers
+        })
+      ]);
 
       if (
         productResponse.status === 401 ||
@@ -67,6 +128,8 @@ function CustomerDashboard() {
       if (productResponse.ok) {
         const productData = await productResponse.json();
         setProducts(productData);
+      } else {
+        throw new Error("Unable to load products.");
       }
 
       if (orderResponse.ok) {
@@ -82,7 +145,7 @@ function CustomerDashboard() {
 
     } catch (error) {
       console.error("Customer dashboard error:", error);
-      showMessage("Unable to connect to the server.", "error");
+      showMessage(error.message || "Unable to connect to the server.", "error");
     } finally {
       setLoading(false);
     }
@@ -101,14 +164,35 @@ function CustomerDashboard() {
     });
   };
 
+  // SELECT PRODUCT SHADE
+  const handleShadeChange = (productId, shade) => {
+    setSelectedShades(previous => ({
+      ...previous,
+      [productId]: shade
+    }));
+  };
+
+  // ADD PRODUCT TO CART
   const addToCart = (product) => {
     if (product.stock <= 0) {
       showMessage("This product is out of stock.", "error");
       return;
     }
 
+    const productShades = product.shades || [];
+    const selectedShade = selectedShades[product.product_id] || "";
+
+    if (productShades.length > 0 && !selectedShade) {
+      showMessage("Please select a product shade first.", "error");
+      return;
+    }
+
+    const shadeValue = selectedShade || null;
+
     const existingItem = cart.find(
-      item => item.product_id === product.product_id
+      item =>
+        item.product_id === product.product_id &&
+        item.shade === shadeValue
     );
 
     if (existingItem) {
@@ -117,19 +201,24 @@ function CustomerDashboard() {
         return;
       }
 
-      setCart(cart.map(item =>
-        item.product_id === product.product_id
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      ));
+      setCart(previous =>
+        previous.map(item =>
+          item.product_id === product.product_id &&
+          item.shade === shadeValue
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      );
+
     } else {
-      setCart([
-        ...cart,
+      setCart(previous => [
+        ...previous,
         {
           product_id: product.product_id,
           product_name: product.product_name,
           price: Number(product.price),
           stock: Number(product.stock),
+          shade: shadeValue,
           quantity: 1
         }
       ]);
@@ -138,15 +227,18 @@ function CustomerDashboard() {
     showMessage("Product added to cart!");
   };
 
-  const updateQuantity = (productId, newQuantity) => {
+  // UPDATE CART QUANTITY
+  const updateQuantity = (productId, shade, newQuantity) => {
     const item = cart.find(
-      product => product.product_id === productId
+      product =>
+        product.product_id === productId &&
+        product.shade === shade
     );
 
     if (!item) return;
 
     if (newQuantity < 1) {
-      removeFromCart(productId);
+      removeFromCart(productId, shade);
       return;
     }
 
@@ -155,17 +247,27 @@ function CustomerDashboard() {
       return;
     }
 
-    setCart(cart.map(product =>
-      product.product_id === productId
-        ? { ...product, quantity: newQuantity }
-        : product
-    ));
+    setCart(previous =>
+      previous.map(product =>
+        product.product_id === productId &&
+        product.shade === shade
+          ? { ...product, quantity: newQuantity }
+          : product
+      )
+    );
   };
 
-  const removeFromCart = (productId) => {
-    setCart(cart.filter(
-      item => item.product_id !== productId
-    ));
+  // REMOVE CART ITEM
+  const removeFromCart = (productId, shade) => {
+    setCart(previous =>
+      previous.filter(
+        item =>
+          !(
+            item.product_id === productId &&
+            item.shade === shade
+          )
+      )
+    );
   };
 
   const cartTotal = cart.reduce(
@@ -178,6 +280,7 @@ function CustomerDashboard() {
     0
   );
 
+  // PLACE CUSTOMER ORDER
   const placeOrder = async () => {
     if (cart.length === 0) {
       showMessage("Your cart is empty.", "error");
@@ -198,7 +301,8 @@ function CustomerDashboard() {
           body: JSON.stringify({
             items: cart.map(item => ({
               product_id: item.product_id,
-              quantity: item.quantity
+              quantity: item.quantity,
+              shade: item.shade
             }))
           })
         }
@@ -215,6 +319,8 @@ function CustomerDashboard() {
       }
 
       setCart([]);
+      setSelectedShades({});
+
       showMessage(
         `Order #${data.order_id} placed successfully!`
       );
@@ -230,6 +336,7 @@ function CustomerDashboard() {
     }
   };
 
+  // SEARCH PRODUCTS
   const filteredProducts = products.filter(product =>
     product.product_name
       .toLowerCase()
@@ -243,23 +350,92 @@ function CustomerDashboard() {
   ).length;
 
   const completedOrders = orders.filter(
-    order => order.status === "Completed" ||
-             order.status === "Paid"
+    order =>
+      order.status === "Completed" ||
+      order.status === "Paid"
   ).length;
 
+  // PRODUCT CARD
+  const renderProductCard = (product) => {
+    const productShades = product.shades || [];
+
+    return (
+      <div
+        className="customer-product-card"
+        key={product.product_id}
+      >
+        <div className="customer-product-icon">
+          {getProductSticker(product.product_name)}
+        </div>
+
+        <h4>{product.product_name}</h4>
+
+        <p>{product.category_name || "Beauty Product"}</p>
+
+        <strong>{formatPrice(product.price)}</strong>
+
+        <small>
+          {product.stock > 0
+            ? `Available Stock: ${product.stock}`
+            : "Out of Stock"}
+        </small>
+
+        {productShades.length > 0 && (
+          <div className="customer-shade-selection">
+            <label htmlFor={`shade-${product.product_id}`}>
+              🎨 Select Shade:
+            </label>
+
+            <select
+              id={`shade-${product.product_id}`}
+              value={selectedShades[product.product_id] || ""}
+              onChange={e =>
+                handleShadeChange(
+                  product.product_id,
+                  e.target.value
+                )
+              }
+            >
+              <option value="">Choose a shade</option>
+
+              {productShades.map(shade => (
+                <option
+                  key={shade.shade_id}
+                  value={shade.shade_name}
+                >
+                  {shade.shade_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <button
+          className="pink-button"
+          disabled={product.stock <= 0}
+          onClick={() => addToCart(product)}
+        >
+          Add to Cart
+        </button>
+      </div>
+    );
+  };
+
+  // DASHBOARD
   const renderDashboard = () => (
     <>
       <section className="dashboard-welcome">
         <div>
           <h2>Hello, {user.fullname || "Customer"}! 💗</h2>
-          <p>Welcome to Small Business. Start shopping today!</p>
+          <p>Welcome to Beauty Finds. Start shopping today!</p>
         </div>
+
         <span className="welcome-icon">🛍️</span>
       </section>
 
       <section className="dashboard-cards">
         <div className="dashboard-card">
-          <div className="card-icon">📦</div>
+          <div className="card-icon">💄</div>
           <p>Available Products</p>
           <h2>{loading ? "..." : products.length}</h2>
         </div>
@@ -286,8 +462,8 @@ function CustomerDashboard() {
       <section className="customer-content-card">
         <div className="customer-section-heading">
           <div>
-            <h3>Featured Products</h3>
-            <p>Browse our available products.</p>
+            <h3>Featured Beauty Products</h3>
+            <p>Browse our available beauty products.</p>
           </div>
 
           <button
@@ -304,26 +480,9 @@ function CustomerDashboard() {
           ) : products.length === 0 ? (
             <p>No products available.</p>
           ) : (
-            products.slice(0, 4).map(product => (
-              <div className="customer-product-card" key={product.product_id}>
-                <div className="customer-product-icon">🛍️</div>
-
-                <h4>{product.product_name}</h4>
-
-                <p>{product.category_name || "General"}</p>
-
-                <strong>{formatPrice(product.price)}</strong>
-
-                <small>Stock: {product.stock}</small>
-
-                <button
-                  className="pink-button"
-                  onClick={() => addToCart(product)}
-                >
-                  Add to Cart
-                </button>
-              </div>
-            ))
+            products.slice(0, 4).map(product =>
+              renderProductCard(product)
+            )
           )}
         </div>
       </section>
@@ -344,7 +503,9 @@ function CustomerDashboard() {
         </div>
 
         {orders.length === 0 ? (
-          <p className="customer-empty">You have no orders yet.</p>
+          <p className="customer-empty">
+            You have no orders yet.
+          </p>
         ) : (
           <div className="table-wrapper">
             <table className="data-table">
@@ -364,7 +525,9 @@ function CustomerDashboard() {
                     <td>{order.order_date}</td>
                     <td>{formatPrice(order.total_amount)}</td>
                     <td>
-                      <span className={`customer-status ${order.status.toLowerCase()}`}>
+                      <span
+                        className={`customer-status ${String(order.status || "").toLowerCase()}`}
+                      >
                         {order.status}
                       </span>
                     </td>
@@ -378,12 +541,13 @@ function CustomerDashboard() {
     </>
   );
 
+  // SHOP PRODUCTS
   const renderProducts = () => (
     <section className="customer-content-card">
       <div className="customer-section-heading">
         <div>
-          <h3>Shop Products</h3>
-          <p>Choose your favorite products.</p>
+          <h3>Shop Beauty Products</h3>
+          <p>Choose your favorite beauty products.</p>
         </div>
       </div>
 
@@ -398,45 +562,26 @@ function CustomerDashboard() {
       {loading ? (
         <p>Loading products...</p>
       ) : filteredProducts.length === 0 ? (
-        <p className="customer-empty">No products found.</p>
+        <p className="customer-empty">
+          No products found.
+        </p>
       ) : (
         <div className="customer-product-grid">
-          {filteredProducts.map(product => (
-            <div className="customer-product-card" key={product.product_id}>
-              <div className="customer-product-icon">📦</div>
-
-              <h4>{product.product_name}</h4>
-
-              <p>{product.category_name || "General"}</p>
-
-              <strong>{formatPrice(product.price)}</strong>
-
-              <small>
-                {product.stock > 0
-                  ? `Available Stock: ${product.stock}`
-                  : "Out of Stock"}
-              </small>
-
-              <button
-                className="pink-button"
-                disabled={product.stock <= 0}
-                onClick={() => addToCart(product)}
-              >
-                Add to Cart
-              </button>
-            </div>
-          ))}
+          {filteredProducts.map(product =>
+            renderProductCard(product)
+          )}
         </div>
       )}
     </section>
   );
 
+  // SHOPPING CART
   const renderCart = () => (
     <section className="customer-content-card">
       <div className="customer-section-heading">
         <div>
           <h3>My Shopping Cart</h3>
-          <p>Review your selected products.</p>
+          <p>Review your selected products and shades.</p>
         </div>
       </div>
 
@@ -459,6 +604,7 @@ function CustomerDashboard() {
               <thead>
                 <tr>
                   <th>Product</th>
+                  <th>Shade</th>
                   <th>Price</th>
                   <th>Quantity</th>
                   <th>Subtotal</th>
@@ -468,17 +614,23 @@ function CustomerDashboard() {
 
               <tbody>
                 {cart.map(item => (
-                  <tr key={item.product_id}>
+                  <tr
+                    key={`${item.product_id}-${item.shade || "none"}`}
+                  >
                     <td>{item.product_name}</td>
+                    <td>{item.shade || "N/A"}</td>
                     <td>{formatPrice(item.price)}</td>
 
                     <td>
                       <div className="customer-quantity">
                         <button
-                          onClick={() => updateQuantity(
-                            item.product_id,
-                            item.quantity - 1
-                          )}
+                          onClick={() =>
+                            updateQuantity(
+                              item.product_id,
+                              item.shade,
+                              item.quantity - 1
+                            )
+                          }
                         >
                           -
                         </button>
@@ -486,10 +638,13 @@ function CustomerDashboard() {
                         <span>{item.quantity}</span>
 
                         <button
-                          onClick={() => updateQuantity(
-                            item.product_id,
-                            item.quantity + 1
-                          )}
+                          onClick={() =>
+                            updateQuantity(
+                              item.product_id,
+                              item.shade,
+                              item.quantity + 1
+                            )
+                          }
                         >
                           +
                         </button>
@@ -503,7 +658,12 @@ function CustomerDashboard() {
                     <td>
                       <button
                         className="delete-button"
-                        onClick={() => removeFromCart(item.product_id)}
+                        onClick={() =>
+                          removeFromCart(
+                            item.product_id,
+                            item.shade
+                          )
+                        }
                       >
                         Remove
                       </button>
@@ -537,12 +697,13 @@ function CustomerDashboard() {
     </section>
   );
 
+  // CUSTOMER ORDER HISTORY
   const renderOrders = () => (
     <section className="customer-content-card">
       <div className="customer-section-heading">
         <div>
           <h3>My Orders</h3>
-          <p>View your order history and status.</p>
+          <p>View your order history and selected shades.</p>
         </div>
 
         <button
@@ -561,30 +722,50 @@ function CustomerDashboard() {
       ) : (
         <div className="customer-orders-list">
           {orders.map(order => (
-            <div className="customer-order-card" key={order.order_id}>
+            <div
+              className="customer-order-card"
+              key={order.order_id}
+            >
               <div className="customer-order-header">
                 <div>
                   <h4>Order #{order.order_id}</h4>
                   <small>{order.order_date}</small>
                 </div>
 
-                <span className={`customer-status ${order.status.toLowerCase()}`}>
+                <span
+                  className={`customer-status ${String(order.status || "").toLowerCase()}`}
+                >
                   {order.status}
                 </span>
               </div>
 
               <div className="customer-order-items">
                 {order.items.map((item, index) => (
-                  <p key={`${order.order_id}-${item.product_id}-${index}`}>
-                    {item.product_name} × {item.quantity}
-                    <strong>{formatPrice(item.subtotal)}</strong>
+                  <p
+                    key={`${order.order_id}-${item.product_id}-${index}`}
+                  >
+                    <span>
+                      {item.product_name} × {item.quantity}
+
+                      {item.shade && (
+                        <small>
+                          {" "} | Shade: {item.shade}
+                        </small>
+                      )}
+                    </span>
+
+                    <strong>
+                      {formatPrice(item.subtotal)}
+                    </strong>
                   </p>
                 ))}
               </div>
 
               <div className="customer-order-total">
                 <span>Total Amount</span>
-                <strong>{formatPrice(order.total_amount)}</strong>
+                <strong>
+                  {formatPrice(order.total_amount)}
+                </strong>
               </div>
             </div>
           ))}
@@ -593,6 +774,7 @@ function CustomerDashboard() {
     </section>
   );
 
+  // CUSTOMER ACCOUNT
   const renderAccount = () => (
     <section className="customer-content-card">
       <div className="customer-section-heading">
@@ -643,10 +825,11 @@ function CustomerDashboard() {
     account: "My Account"
   };
 
+  // MAIN LAYOUT
   return (
     <div className="dashboard-layout">
       <aside className="dashboard-sidebar">
-        <h2>Small Business Management.</h2>
+        <h2>Beauty Finds</h2>
 
         <nav>
           <button
@@ -660,7 +843,7 @@ function CustomerDashboard() {
             className={activeSection === "products" ? "active" : ""}
             onClick={() => setActiveSection("products")}
           >
-            📦 Shop Products
+            💄 Shop Products
           </button>
 
           <button
@@ -685,7 +868,10 @@ function CustomerDashboard() {
           </button>
         </nav>
 
-        <button className="logout-button" onClick={handleLogout}>
+        <button
+          className="logout-button"
+          onClick={handleLogout}
+        >
           Logout
         </button>
       </aside>
@@ -699,6 +885,7 @@ function CustomerDashboard() {
 
           <div className="admin-info">
             <span>👤</span>
+
             <div>
               <strong>{user.fullname || "Customer"}</strong>
               <small>Customer</small>
@@ -709,7 +896,10 @@ function CustomerDashboard() {
         {message && (
           <div className={`customer-message ${messageType}`}>
             <span>{message}</span>
-            <button onClick={() => setMessage("")}>×</button>
+
+            <button onClick={() => setMessage("")}>
+              ×
+            </button>
           </div>
         )}
 

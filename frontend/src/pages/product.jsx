@@ -1,37 +1,68 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-// PRODUCT IMAGES
-const productImages = {
-  "Lip Tint": "/images/products/liptint.jpg",
-  "Lip Gloss": "/images/products/lip-gloss.jpg",
-  "Mini Shoulder Bag": "/images/products/mini_shoulder_bag.jpg",
-  "Tote Bag": "/images/products/tote-bag.jpg",
-  "Ribbon Hairclip": "/images/products/ribbon-hairclip.jpg",
-  "Pearl Hairclip": "/images/products/pearl-hairclip.jpg",
-  "Casual Crop Top": "/images/products/casual_croptop.jpg",
-  "Basic T-Shirt": "/images/products/basic-tshirt.jpg",
-  "Denim Jacket": "/images/products/denim-jacket.jpg",
-  "Casual Jacket": "/images/products/casual-jacket.jpg",
-  "Wide Leg Pants": "/images/products/wide_leg_pants.jpg",
-  "Cargo Pants": "/images/products/cargo-pants.jpg",
-  "Blush On": "/images/products/blush-on.jpg",
-  "Face Powder": "/images/products/face-powder.jpg",
-  "Flat Sandals": "/images/products/flat-sandals.jpg",
-  "Casual Sandals": "/images/products/casual-sandals.jpg",
-  "jmcy": "/images/products/jmcy.jpg"
-};
 
-const getProductImage = (productName) => {
-  return productImages[productName] || "/images/products/no-image.jpg";
+// PRODUCT STICKERS
+const getProductSticker = (productName) => {
+  const name = productName.toLowerCase();
+
+  if (
+    name.includes("lip") ||
+    name.includes("tint") ||
+    name.includes("gloss") ||
+    name.includes("lipstick")
+  ) return "💄";
+
+  if (
+    name.includes("blush") ||
+    name.includes("powder") ||
+    name.includes("foundation") ||
+    name.includes("concealer") ||
+    name.includes("highlighter")
+  ) return "✨";
+
+  if (
+    name.includes("cleanser") ||
+    name.includes("toner") ||
+    name.includes("serum") ||
+    name.includes("moisturizer") ||
+    name.includes("sunscreen")
+  ) return "🧴";
+
+  if (
+    name.includes("mascara") ||
+    name.includes("eyeliner") ||
+    name.includes("eyeshadow") ||
+    name.includes("eyebrow") ||
+    name.includes("eyelash")
+  ) return "👁️";
+
+  if (
+    name.includes("lotion") ||
+    name.includes("scrub") ||
+    name.includes("body") ||
+    name.includes("mist")
+  ) return "🌸";
+
+  if (
+    name.includes("brush") ||
+    name.includes("blender") ||
+    name.includes("puff") ||
+    name.includes("mirror") ||
+    name.includes("pouch") ||
+    name.includes("hairclip")
+  ) return "🎀";
+
+  return "💗";
 };
 
 function Products() {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState(() => {
+  const [user] = useState(() => {
     return JSON.parse(localStorage.getItem("user") || "{}");
   });
+
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
 
@@ -46,23 +77,29 @@ function Products() {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
 
+  // SHADE STATES
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [shades, setShades] = useState([]);
+  const [shadeName, setShadeName] = useState("");
+
   const token = localStorage.getItem("token");
 
-  const isAdmin = user.role === "Admin";
-  const isStaff = user.role === "Staff";
+  const role = String(user.role || "").toLowerCase();
+  const isAdmin = role === "admin";
+  const isStaff = role === "staff";
 
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`
   };
 
-  // LOAD USER INFORMATION
+  // LOAD DATA
   useEffect(() => {
-    loadData(user);
+    loadData();
   }, []);
 
-  // LOAD PRODUCTS
-  const loadData = async (currentUser = user) => {
+  // LOAD PRODUCTS AND CATEGORIES
+  const loadData = async () => {
     try {
       const productResponse = await fetch(
         "http://localhost:5000/api/products",
@@ -76,8 +113,7 @@ function Products() {
       const productData = await productResponse.json();
       setProducts(productData);
 
-      // CATEGORIES ARE NEEDED ONLY BY ADMIN
-      if (currentUser.role === "Admin") {
+      if (isAdmin) {
         const categoryResponse = await fetch(
           "http://localhost:5000/api/categories",
           { headers }
@@ -111,7 +147,7 @@ function Products() {
     });
   };
 
-  // ADD OR UPDATE PRODUCT - ADMIN ONLY
+  // ADD OR UPDATE PRODUCT
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -135,9 +171,7 @@ function Products() {
       Number(form.stock_quantity) < 0 ||
       !Number.isInteger(Number(form.stock_quantity))
     ) {
-      setMessage(
-        "Enter a valid price and whole-number stock quantity."
-      );
+      setMessage("Enter a valid price and whole-number stock quantity.");
       return;
     }
 
@@ -177,14 +211,14 @@ function Products() {
       });
 
       setEditId(null);
-      loadData(user);
+      await loadData();
 
     } catch (error) {
       setMessage(error.message);
     }
   };
 
-  // EDIT PRODUCT - ADMIN ONLY
+  // EDIT PRODUCT
   const handleEdit = (product) => {
     if (!isAdmin) return;
 
@@ -204,7 +238,7 @@ function Products() {
     });
   };
 
-  // DELETE PRODUCT - ADMIN ONLY
+  // DELETE PRODUCT
   const handleDelete = async (id) => {
     if (!isAdmin) return;
 
@@ -228,7 +262,7 @@ function Products() {
       }
 
       setMessage("Product deleted successfully!");
-      loadData(user);
+      await loadData();
 
     } catch (error) {
       setMessage(error.message);
@@ -237,8 +271,6 @@ function Products() {
 
   // CANCEL EDITING
   const handleCancel = () => {
-    if (!isAdmin) return;
-
     setForm({
       product_name: "",
       category_id: "",
@@ -250,7 +282,101 @@ function Products() {
     setMessage("");
   };
 
-  // SEARCH PRODUCT
+  // OPEN SHADE MANAGEMENT
+  const handleOpenShades = async (product) => {
+    setSelectedProduct(product);
+    setShades([]);
+    setShadeName("");
+    setMessage("");
+
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/products/${product.product_id}/shades`,
+        { headers }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to load shades.");
+      }
+
+      setShades(data);
+
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  // ADD SHADE
+  const handleAddShade = async (e) => {
+    e.preventDefault();
+
+    if (!selectedProduct || !shadeName.trim()) {
+      setMessage("Please enter a shade name.");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/products/${selectedProduct.product_id}/shades`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            shade_name: shadeName.trim()
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to add shade.");
+      }
+
+      setShadeName("");
+      setMessage("Shade added successfully!");
+
+      await handleOpenShades(selectedProduct);
+
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  // DELETE SHADE
+  const handleDeleteShade = async (shadeId) => {
+    if (!selectedProduct) return;
+
+    if (!window.confirm("Are you sure you want to delete this shade?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/products/${selectedProduct.product_id}/shades/${shadeId}`,
+        {
+          method: "DELETE",
+          headers
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to delete shade.");
+      }
+
+      setMessage("Shade deleted successfully!");
+      await handleOpenShades(selectedProduct);
+
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  // SEARCH PRODUCTS
   const filteredProducts = products.filter((product) =>
     product.product_name
       .toLowerCase()
@@ -262,34 +388,32 @@ function Products() {
 
       {/* SIDEBAR */}
       <aside className="dashboard-sidebar">
-        <h2>Small Business Management.</h2>
+        <h2>Beauty Finds</h2>
 
         <nav>
           <Link to="/dashboard">🏠 Dashboard</Link>
+
           <Link to="/products" className="active">
-            📦 Products
+            💄 Products
           </Link>
 
-           {/* ADMIN ONLY */}
-  {isAdmin && (
-    <>
-      <Link to="/categories">🏷️ Categories</Link>
-      <Link to="/customers">👥 Customers</Link>
-    </>
-  )}
+          {isAdmin && (
+            <>
+              <Link to="/categories">🏷️ Categories</Link>
+              <Link to="/customers">👥 Customers</Link>
+            </>
+          )}
 
-   {/* ADMIN AND STAFF */}
-   <Link to="/orders">🛒 Orders</Link>
-  <Link to="/payments">💳 Payments</Link>
+          <Link to="/orders">🛒 Orders</Link>
+          <Link to="/payments">💳 Payments</Link>
 
-{/* ADMIN ONLY */}
-{isAdmin && (
-    <>
-      <Link to="/inventory">📥 Inventory</Link>
-      <Link to="/reports">📊 Reports</Link>
-      <Link to="/users">👤 Users</Link>
-    </>
-  )}
+          {isAdmin && (
+            <>
+              <Link to="/inventory">📥 Inventory</Link>
+              <Link to="/reports">📊 Reports</Link>
+              <Link to="/users">👤 Users</Link>
+            </>
+          )}
         </nav>
 
         <button
@@ -309,8 +433,8 @@ function Products() {
             <h1>Product Management</h1>
             <p>
               {isAdmin
-                ? "Manage your business products and stock."
-                : "View your business products and stock."}
+                ? "Manage your Beauty Finds products and shades."
+                : "View Beauty Finds products and stock."}
             </p>
           </div>
 
@@ -323,30 +447,30 @@ function Products() {
           </div>
         </header>
 
-        {/* WELCOME SECTION */}
+        {/* WELCOME */}
         <section className="products-welcome">
           <div>
             <h2>
               {isAdmin
-                ? "Manage Your Products 💗"
-                : "View Products 💗"}
+                ? "Manage Your Beauty Products 💗"
+                : "Explore Beauty Products 💗"}
             </h2>
 
             <p>
               {isAdmin
-                ? "Add, update, and organize your business products in one place."
-                : "View product information, prices, categories, and stock availability."}
+                ? "Add, update, and organize your beauty products and shades."
+                : "View available beauty products, prices, and stock."}
             </p>
           </div>
 
-          <span>🛍️</span>
+          <span>💄</span>
         </section>
 
-        {/* PRODUCT SUMMARY */}
+        {/* SUMMARY */}
         <section className="products-summary">
 
           <div className="products-summary-card">
-            <div className="products-summary-icon">📦</div>
+            <div className="products-summary-icon">💄</div>
             <div>
               <p>Total Products</p>
               <h2>{products.length}</h2>
@@ -364,7 +488,7 @@ function Products() {
           )}
 
           <div className="products-summary-card">
-            <div className="products-summary-icon">📥</div>
+            <div className="products-summary-icon">📦</div>
             <div>
               <p>Total Stock</p>
               <h2>
@@ -379,23 +503,17 @@ function Products() {
 
         </section>
 
-        {/* ADD PRODUCT FORM - ADMIN ONLY */}
+        {/* ADD PRODUCT FORM */}
         {isAdmin && (
           <section className="products-card">
 
             <div className="products-card-heading">
               <div>
                 <h2>
-                  {editId
-                    ? "✏️ Update Product"
-                    : "✨ Add New Product"}
+                  {editId ? "✏️ Update Product" : "✨ Add Beauty Product"}
                 </h2>
 
-                <p>
-                  {editId
-                    ? "Update the information of your product."
-                    : "Fill in the details to add a new product."}
-                </p>
+                <p>Enter the product details below.</p>
               </div>
 
               <span>💗</span>
@@ -408,10 +526,11 @@ function Products() {
 
               <div className="products-form-field">
                 <label>Product Name</label>
+
                 <input
                   type="text"
                   name="product_name"
-                  placeholder="Enter product name"
+                  placeholder="Example: Lip Tint"
                   value={form.product_name}
                   onChange={handleChange}
                 />
@@ -419,6 +538,7 @@ function Products() {
 
               <div className="products-form-field">
                 <label>Category</label>
+
                 <select
                   name="category_id"
                   value={form.category_id}
@@ -439,12 +559,13 @@ function Products() {
 
               <div className="products-form-field">
                 <label>Price (₱)</label>
+
                 <input
                   type="number"
                   name="price"
                   min="0"
                   step="0.01"
-                  placeholder="Enter product price"
+                  placeholder="Enter price"
                   value={form.price}
                   onChange={handleChange}
                 />
@@ -452,6 +573,7 @@ function Products() {
 
               <div className="products-form-field">
                 <label>Stock Quantity</label>
+
                 <input
                   type="number"
                   name="stock_quantity"
@@ -464,6 +586,7 @@ function Products() {
               </div>
 
               <div className="products-form-actions">
+
                 <button
                   type="submit"
                   className="products-submit-button"
@@ -480,6 +603,7 @@ function Products() {
                     Cancel
                   </button>
                 )}
+
               </div>
 
             </form>
@@ -493,24 +617,13 @@ function Products() {
           </section>
         )}
 
-        {/* STAFF MESSAGE */}
-        {isStaff && message && (
-          <div className="products-message">
-            {message}
-          </div>
-        )}
-
         {/* PRODUCT LIST */}
         <section className="products-card">
 
           <div className="products-list-heading">
             <div>
-              <h2>📋 Product List</h2>
-              <p>
-                {isAdmin
-                  ? "View and manage all your available products."
-                  : "View all available product information."}
-              </p>
+              <h2>📋 Beauty Product List</h2>
+              <p>View and manage your beauty products.</p>
             </div>
 
             <input
@@ -523,36 +636,33 @@ function Products() {
           </div>
 
           <div className="products-table-wrapper">
+
             <table className="products-table">
+
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Image</th>
+                  <th>Sticker</th>
                   <th>Product Name</th>
                   <th>Category</th>
                   <th>Price</th>
                   <th>Stock</th>
-
                   {isAdmin && <th>Actions</th>}
                 </tr>
               </thead>
 
               <tbody>
+
                 {filteredProducts.length > 0 ? (
                   filteredProducts.map((product) => (
                     <tr key={product.product_id}>
+
                       <td>#{product.product_id}</td>
 
                       <td>
-                        <img
-                          src={getProductImage(product.product_name)}
-                          alt={product.product_name}
-                          className="product-list-image"
-                          onError={(e) => {
-                            e.currentTarget.src =
-                              "/images/products/no-image.jpg";
-                          }}
-                        />
+                        <span className="product-sticker">
+                          {getProductSticker(product.product_name)}
+                        </span>
                       </td>
 
                       <td className="products-name">
@@ -576,24 +686,37 @@ function Products() {
                       {isAdmin && (
                         <td>
                           <div className="products-action-buttons">
+
                             <button
+                              type="button"
                               className="products-edit-button"
                               onClick={() => handleEdit(product)}
                             >
-                              Edit
+                              ✏️ Edit
                             </button>
 
                             <button
+                              type="button"
+                              className="products-shade-button"
+                              onClick={() => handleOpenShades(product)}
+                            >
+                              🎨 Shades
+                            </button>
+
+                            <button
+                              type="button"
                               className="products-delete-button"
                               onClick={() =>
                                 handleDelete(product.product_id)
                               }
                             >
-                              Delete
+                              🗑️ Delete
                             </button>
+
                           </div>
                         </td>
                       )}
+
                     </tr>
                   ))
                 ) : (
@@ -602,12 +725,14 @@ function Products() {
                       colSpan={isAdmin ? 7 : 6}
                       className="products-empty"
                     >
-                      🛍️ No products found.
+                      💄 No products found.
                     </td>
                   </tr>
                 )}
+
               </tbody>
             </table>
+
           </div>
 
           <p className="products-table-footer">
@@ -615,6 +740,104 @@ function Products() {
           </p>
 
         </section>
+
+        {/* SHADE MANAGEMENT */}
+        {isAdmin && selectedProduct && (
+          <section className="products-card">
+
+            <div className="products-card-heading">
+              <div>
+                <h2>🎨 Product Shades</h2>
+
+                <p>
+                  Managing shades for:{" "}
+                  <strong>{selectedProduct.product_name}</strong>
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="products-cancel-button"
+                onClick={() => {
+                  setSelectedProduct(null);
+                  setShades([]);
+                  setShadeName("");
+                  setMessage("");
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleAddShade}
+              className="products-form"
+            >
+
+              <div className="products-form-field">
+                <label>New Shade Name</label>
+
+                <input
+                  type="text"
+                  placeholder="Example: Cherry Red"
+                  value={shadeName}
+                  onChange={(e) => setShadeName(e.target.value)}
+                />
+              </div>
+
+              <div className="products-form-actions">
+                <button
+                  type="submit"
+                  className="products-submit-button"
+                >
+                  + Add Shade
+                </button>
+              </div>
+
+            </form>
+
+            {message && (
+              <div className="products-message">
+                {message}
+              </div>
+            )}
+
+            <div className="products-shade-list">
+
+              <h3>Available Shades</h3>
+
+              {shades.length > 0 ? (
+                shades.map((shade) => (
+                  <div
+                    key={shade.shade_id}
+                    className="products-shade-item"
+                  >
+                    <span>🎨 {shade.shade_name}</span>
+
+                    <button
+                      type="button"
+                      className="products-delete-button"
+                      onClick={() => handleDeleteShade(shade.shade_id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p>No shades added for this product yet.</p>
+              )}
+
+            </div>
+
+          </section>
+        )}
+
+        {/* GENERAL MESSAGE */}
+        {!isAdmin && message && (
+          <div className="products-message">
+            {message}
+          </div>
+        )}
 
       </main>
     </div>

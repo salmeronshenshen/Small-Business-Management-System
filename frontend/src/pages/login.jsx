@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -30,7 +29,7 @@ function Login() {
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({
+          body: JSON.stringify({ 
             username: username.trim(),
             password: password
           })
@@ -76,75 +75,68 @@ function Login() {
   };
 
   return (
-    <div className="bf-login-container">
+    <div className="sb-auth-container">
 
-      {/* BACKGROUND DECORATIONS */}
-      <div className="bf-decoration bf-heart-one">♡</div>
-      <div className="bf-decoration bf-heart-two">♡</div>
-      <div className="bf-decoration bf-heart-three">✦</div>
-      <div className="bf-decoration bf-heart-four">♡</div>
-      <div className="bf-decoration bf-sparkle-one">✧</div>
-      <div className="bf-decoration bf-sparkle-two">✦</div>
+      <div className="sb-decoration heart-one">♡</div>
+      <div className="sb-decoration heart-two">♥</div>
+      <div className="sb-decoration heart-three">♡</div>
+      <div className="sb-decoration heart-four">♥</div>
+      <div className="sb-decoration sparkle-one">✦</div>
+      <div className="sb-decoration sparkle-two">✦</div>
 
-      {/* LOGIN CARD */}
-      <form className="bf-login-card" onSubmit={handleLogin}>
+      <form className="sb-auth-card" onSubmit={handleLogin}>
 
-        {/* BRAND */}
-        <div className="bf-brand-icon">
-          <span>BF</span>
+        <div className="sb-store-image">
+          <img src="/store.png" alt="Small Business Store" />
         </div>
 
-        <div className="bf-brand-name">
-          <h2>Beauty Finds</h2>
-          <p>YOUR BEAUTY, YOUR STYLE</p>
+        <div className="sb-brand">
+          <h2>Small Business</h2>
         </div>
 
-        <div className="bf-divider">
+        <h1>Welcome!</h1>
+
+        <p className="sb-subtitle">
+          Sign in to your small business account.
+        </p>
+
+        <div className="sb-divider">
           <span></span>
-          <b>♡</b>
+          <b>♥</b>
           <span></span>
         </div>
 
-        {/* WELCOME TEXT */}
-        <div className="bf-welcome">
-          <h1>Welcome Back!</h1>
-          <p>Sign in to your account to continue.</p>
-        </div>
-
-        {/* ERROR MESSAGE */}
         {message && (
-          <div className="bf-message">
+          <div className="sb-message">
             {message}
           </div>
         )}
 
-        {/* USERNAME */}
-        <div className="bf-input-group">
-          <label>Username</label>
+        <div className="sb-input-group">
+          <label>
+            <span className="sb-field-icon">♟</span>
+            Username
+          </label>
 
-          <div className="bf-input-wrapper">
-            <span className="bf-input-icon">♙</span>
-
-            <input
-              type="text"
-              placeholder="Enter your username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-          </div>
+          <input
+            type="text"
+            placeholder="Enter username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
         </div>
 
-        {/* PASSWORD */}
-        <div className="bf-input-group">
-          <label>Password</label>
+        <div className="sb-input-group">
+          <label>
+            <span className="sb-field-icon">🔒</span>
+            Password
+          </label>
 
-          <div className="bf-input-wrapper">
-            <span className="bf-input-icon">♙</span>
-
+          <div className="sb-password-field">
             <input
               type={showPassword ? "text" : "password"}
-              placeholder="Enter your password"
+              placeholder="Enter password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -152,40 +144,33 @@ function Login() {
 
             <button
               type="button"
-              className="bf-toggle-password"
+              className="sb-toggle-password"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={
                 showPassword ? "Hide password" : "Show password"
               }
             >
-              {showPassword ? "Hide" : "Show"}
+              {showPassword ? "🙈" : "👁"}
             </button>
           </div>
         </div>
 
-        {/* LOGIN BUTTON */}
         <button
           type="submit"
-          className="bf-login-button"
+          className="sb-login-button"
           disabled={loading}
         >
-          {loading ? "Signing In..." : "Sign In"}
+          {loading ? "Logging in..." : "Login"}
         </button>
 
-        {/* REGISTER LINK */}
-        <p className="bf-register-link">
+        <p className="sb-auth-link">
           Don't have an account?
-          <Link to="/register"> Create Account</Link>
+          <Link to="/register">Register</Link>
         </p>
-
-        {/* FOOTER */}
-        <div className="bf-login-footer">
-          <span>♡</span> Beauty Finds — Your Beauty Destination
-        </div>
 
       </form>
     </div>
   );
 }
 
-export default Login;
+export default Login; 

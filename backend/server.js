@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors = require("cors");
 const Database = require("better-sqlite3");
@@ -42,7 +41,6 @@ db.prepare(`
     status TEXT DEFAULT 'Active'
   )
 `).run();
-
 // =====================================
 // CREATE CATEGORIES TABLE
 // =====================================
@@ -50,7 +48,8 @@ db.prepare(`
 db.prepare(`
   CREATE TABLE IF NOT EXISTS categories (
     category_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category_name TEXT NOT NULL
+    category_name TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
   )
 `).run();
 
@@ -65,6 +64,7 @@ db.prepare(`
     category_id INTEGER,
     price REAL DEFAULT 0,
     stock INTEGER DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (category_id) REFERENCES categories(category_id)
   )
 `).run();
@@ -109,6 +109,49 @@ if (!hasStock) {
   }
 
   console.log("Products stock column successfully migrated!");
+}
+
+
+// =====================================
+// CREATE PRODUCT SHADES TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS product_shades (
+    shade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    shade_name TEXT NOT NULL,
+    FOREIGN KEY (product_id)
+      REFERENCES products(product_id)
+      ON DELETE CASCADE,
+    UNIQUE(product_id, shade_name)
+  )
+`).run();
+
+// =====================================
+// ADD is_active COLUMN TO EXISTING TABLES
+// =====================================
+
+try {
+  db.prepare(`
+    ALTER TABLE categories
+    ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1
+  `).run();
+} catch (error) {
+  if (!error.message.includes("duplicate column name")) {
+    throw error;
+  }
+}
+
+try {
+  db.prepare(`
+    ALTER TABLE products
+    ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1
+  `).run();
+} catch (error) {
+  if (!error.message.includes("duplicate column name")) {
+    throw error;
+  }
 }
 
 // =====================================
@@ -182,6 +225,62 @@ db.prepare(`
     FOREIGN KEY (product_id) REFERENCES products(product_id)
   )
 `).run();
+
+
+/* =====================================
+   PRODUCT SHADES TABLE
+===================================== */
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS product_shades (
+    shade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    shade_name TEXT NOT NULL,
+    FOREIGN KEY (product_id)
+      REFERENCES products(product_id)
+      ON DELETE CASCADE,
+    UNIQUE (product_id, shade_name)
+  )
+`);
+
+
+/* =====================================
+   CHECK ORDER DETAILS SHADE COLUMN
+===================================== */
+
+const shadeColumnInfo = db.prepare(`
+  PRAGMA table_info(order_details)
+`).all();
+
+const shadeColumnExists = shadeColumnInfo.some(
+  column => column.name === "shade"
+);
+
+if (!shadeColumnExists) {
+  db.exec(`
+    ALTER TABLE order_details
+    ADD COLUMN shade TEXT
+  `);
+}
+
+
+// =====================================
+// ADD SHADE COLUMN TO ORDER DETAILS
+// =====================================
+const orderDetailColumns = db.prepare(
+  "PRAGMA table_info(order_details)"
+).all();
+
+const hasShadeColumn = orderDetailColumns.some(
+  column => column.name === "shade"
+);
+
+if (!hasShadeColumn) {
+  db.prepare(`
+    ALTER TABLE order_details
+    ADD COLUMN shade TEXT
+  `).run();
+}
 
 // =====================================
 // CREATE PAYMENTS TABLE
@@ -259,21 +358,94 @@ if (!hasRemarks) {
 }
 
 // =====================================
-// DEFAULT CATEGORIES AND PRODUCTS
+// UPDATE OLD CATEGORY NAMES
+// =====================================
+
+function renameOrMergeCategory(oldName, newName) {
+  const oldCategory = db.prepare(`
+    SELECT category_id
+    FROM categories
+    WHERE LOWER(category_name) = LOWER(?)
+  `).get(oldName);
+
+  if (!oldCategory) return;
+
+  const newCategory = db.prepare(`
+    SELECT category_id
+    FROM categories
+    WHERE LOWER(category_name) = LOWER(?)
+  `).get(newName);
+
+  if (newCategory) {
+    db.prepare(`
+      UPDATE products
+      SET category_id = ?
+      WHERE category_id = ?
+    `).run(newCategory.category_id, oldCategory.category_id);
+
+    db.prepare(`
+      UPDATE categories
+      SET is_active = 0
+      WHERE category_id = ?
+    `).run(oldCategory.category_id);
+  } else {
+    db.prepare(`
+      UPDATE categories
+      SET category_name = ?, is_active = 1
+      WHERE category_id = ?
+    `).run(newName, oldCategory.category_id);
+  }
+}
+
+renameOrMergeCategory("Lippie", "Lip Products");
+renameOrMergeCategory("Makeup", "Face Makeup");
+renameOrMergeCategory("Hairclip", "Beauty Accessories");
+
+// =====================================
+// HIDE OLD UNRELATED PRODUCTS
+// =====================================
+
+db.prepare(`
+  UPDATE products
+  SET is_active = 0
+  WHERE category_id IN (
+    SELECT category_id
+    FROM categories
+    WHERE LOWER(category_name) IN (
+      'bags',
+      'tops',
+      'jacket',
+      'pants',
+      'sandals'
+    )
+  )
+`).run();
+
+db.prepare(`
+  UPDATE categories
+  SET is_active = 0
+  WHERE LOWER(category_name) IN (
+    'bags',
+    'tops',
+    'jacket',
+    'pants',
+    'sandals'
+  )
+`).run();
+
+// =====================================
+// BEAUTY FINDS CATEGORIES
 // =====================================
 
 const defaultCategories = [
-  "Lippie",
-  "Bags",
-  "Hairclip",
-  "Tops",
-  "Jacket",
-  "Pants",
-  "Makeup",
-  "Sandals"
+  "Lip Products",
+  "Face Makeup",
+  "Skincare",
+  "Eye Makeup",
+  "Body Care",
+  "Beauty Accessories"
 ];
 
-// INSERT DEFAULT CATEGORIES
 const insertCategory = db.prepare(`
   INSERT INTO categories (category_name)
   SELECT ?
@@ -284,46 +456,83 @@ const insertCategory = db.prepare(`
   )
 `);
 
-defaultCategories.forEach((category) => {
+defaultCategories.forEach(category => {
   insertCategory.run(category, category);
 });
 
-// DEFAULT PRODUCTS
+// Make sure default categories are active
+db.prepare(`
+  UPDATE categories
+  SET is_active = 1
+  WHERE LOWER(category_name) IN (
+    'lip products',
+    'face makeup',
+    'skincare',
+    'eye makeup',
+    'body care',
+    'beauty accessories'
+  )
+`).run();
+
+// =====================================
+// DEFAULT BEAUTY PRODUCTS
+// =====================================
+
 const defaultProducts = [
-  { name: "Lip Tint", category: "Lippie", price: 99, stock: 20 },
-  { name: "Lip Gloss", category: "Lippie", price: 120, stock: 15 },
+  // LIP PRODUCTS
+  { name: "Lip Tint", category: "Lip Products", price: 99, stock: 20 },
+  { name: "Lip Gloss", category: "Lip Products", price: 120, stock: 15 },
+  { name: "Matte Lipstick", category: "Lip Products", price: 150, stock: 15 },
+  { name: "Lip Balm", category: "Lip Products", price: 75, stock: 20 },
+  { name: "Lip Oil", category: "Lip Products", price: 130, stock: 15 },
 
-  { name: "Mini Shoulder Bag", category: "Bags", price: 250, stock: 10 },
-  { name: "Tote Bag", category: "Bags", price: 180, stock: 15 },
+  // FACE MAKEUP
+  { name: "Blush On", category: "Face Makeup", price: 100, stock: 20 },
+  { name: "Face Powder", category: "Face Makeup", price: 150, stock: 15 },
+  { name: "Foundation", category: "Face Makeup", price: 180, stock: 15 },
+  { name: "Concealer", category: "Face Makeup", price: 140, stock: 15 },
+  { name: "Highlighter", category: "Face Makeup", price: 160, stock: 10 },
 
-  { name: "Ribbon Hairclip", category: "Hairclip", price: 35, stock: 30 },
-  { name: "Pearl Hairclip", category: "Hairclip", price: 45, stock: 25 },
+  // SKINCARE
+  { name: "Facial Cleanser", category: "Skincare", price: 120, stock: 20 },
+  { name: "Facial Toner", category: "Skincare", price: 130, stock: 15 },
+  { name: "Facial Serum", category: "Skincare", price: 180, stock: 15 },
+  { name: "Moisturizer", category: "Skincare", price: 150, stock: 15 },
+  { name: "Sunscreen", category: "Skincare", price: 170, stock: 20 },
 
-  { name: "Casual Crop Top", category: "Tops", price: 199, stock: 15 },
-  { name: "Basic T-Shirt", category: "Tops", price: 180, stock: 20 },
+  // EYE MAKEUP
+  { name: "Mascara", category: "Eye Makeup", price: 120, stock: 15 },
+  { name: "Eyeliner", category: "Eye Makeup", price: 90, stock: 20 },
+  { name: "Eyebrow Pencil", category: "Eye Makeup", price: 85, stock: 20 },
+  { name: "Eyeshadow Palette", category: "Eye Makeup", price: 200, stock: 10 },
 
-  { name: "Denim Jacket", category: "Jacket", price: 550, stock: 8 },
-  { name: "Casual Jacket", category: "Jacket", price: 450, stock: 10 },
+  // BODY CARE
+  { name: "Body Lotion", category: "Body Care", price: 150, stock: 15 },
+  { name: "Body Scrub", category: "Body Care", price: 160, stock: 10 },
+  { name: "Body Wash", category: "Body Care", price: 130, stock: 15 },
+  { name: "Body Mist", category: "Body Care", price: 180, stock: 15 },
 
-  { name: "Wide Leg Pants", category: "Pants", price: 350, stock: 12 },
-  { name: "Cargo Pants", category: "Pants", price: 420, stock: 10 },
-
-  { name: "Blush On", category: "Makeup", price: 100, stock: 20 },
-  { name: "Face Powder", category: "Makeup", price: 150, stock: 15 },
-
-  { name: "Flat Sandals", category: "Sandals", price: 220, stock: 10 },
-  { name: "Casual Sandals", category: "Sandals", price: 280, stock: 12 }
+  // BEAUTY ACCESSORIES
+  { name: "Makeup Brush Set", category: "Beauty Accessories", price: 180, stock: 10 },
+  { name: "Beauty Blender", category: "Beauty Accessories", price: 60, stock: 20 },
+  { name: "Powder Puff", category: "Beauty Accessories", price: 40, stock: 20 },
+  { name: "Cosmetic Pouch", category: "Beauty Accessories", price: 100, stock: 15 },
+  { name: "Compact Mirror", category: "Beauty Accessories", price: 50, stock: 15 }
 ];
 
+// =====================================
 // INSERT DEFAULT PRODUCTS ONLY ONCE
+// =====================================
+
 const insertProduct = db.prepare(`
   INSERT INTO products (
     product_name,
     category_id,
     price,
-    stock
+    stock,
+    is_active
   )
-  SELECT ?, ?, ?, ?
+  SELECT ?, ?, ?, ?, 1
   WHERE NOT EXISTS (
     SELECT 1
     FROM products
@@ -374,13 +583,68 @@ const seedProducts = db.transaction(() => {
           product.stock
         );
       }
+    } else {
+      // Reactivate existing default beauty products
+      db.prepare(`
+        UPDATE products
+        SET is_active = 1
+        WHERE product_id = ?
+      `).run(existingProduct.product_id);
     }
   }
 });
 
 seedProducts();
 
-console.log("Default categories and products loaded!");
+// =====================================
+// DEFAULT PRODUCT SHADES
+// =====================================
+
+const defaultShades = {
+  "Lip Tint": [
+    "Cherry Red",
+    "Rose Pink",
+    "Peach",
+    "Nude",
+    "Berry"
+  ],
+  "Lip Gloss": [
+    "Clear",
+    "Pink",
+    "Peach",
+    "Red"
+  ],
+  "Matte Lipstick": [
+    "Classic Red",
+    "Rose",
+    "Nude",
+    "Wine"
+  ]
+};
+
+const insertShade = db.prepare(`
+  INSERT OR IGNORE INTO product_shades (
+    product_id,
+    shade_name
+  )
+  VALUES (?, ?)
+`);
+
+for (const productName in defaultShades) {
+  const product = db.prepare(`
+    SELECT product_id
+    FROM products
+    WHERE LOWER(product_name) = LOWER(?)
+  `).get(productName);
+
+  if (product) {
+    defaultShades[productName].forEach(shade => {
+      insertShade.run(product.product_id, shade);
+    });
+  }
+}
+
+console.log("Beauty Finds categories and products loaded!");
 
 // =====================================
 // CONNECT EXISTING CUSTOMER ACCOUNTS
@@ -713,7 +977,6 @@ function verifyAdmin(req, res, next) {
 
   next();
 }
-
 // =====================================
 // ADMIN: GET CATEGORIES
 // =====================================
@@ -727,6 +990,7 @@ app.get(
       const categories = db.prepare(`
         SELECT *
         FROM categories
+        WHERE is_active = 1
         ORDER BY category_name ASC
       `).all();
 
@@ -1223,6 +1487,188 @@ app.delete(
   }
 );
 
+
+// =====================================
+// ADMIN: GET PRODUCT SHADES
+// =====================================
+
+app.get(
+  "/api/products/:id/shades",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const productId = Number(req.params.id);
+
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({
+          message: "Invalid product ID."
+        });
+      }
+
+      const product = db.prepare(`
+        SELECT product_id
+        FROM products
+        WHERE product_id = ?
+      `).get(productId);
+
+      if (!product) {
+        return res.status(404).json({
+          message: "Product not found."
+        });
+      }
+
+      const shades = db.prepare(`
+        SELECT shade_id, product_id, shade_name
+        FROM product_shades
+        WHERE product_id = ?
+        ORDER BY shade_name ASC
+      `).all(productId);
+
+      res.json(shades);
+
+    } catch (error) {
+      console.error("Get shades error:", error);
+
+      res.status(500).json({
+        message: "Unable to load product shades."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: ADD PRODUCT SHADE
+// =====================================
+
+app.post(
+  "/api/products/:id/shades",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const productId = Number(req.params.id);
+
+      const shadeName =
+        typeof req.body.shade_name === "string"
+          ? req.body.shade_name.trim()
+          : "";
+
+      if (
+        !Number.isInteger(productId) ||
+        productId <= 0 ||
+        !shadeName
+      ) {
+        return res.status(400).json({
+          message: "Please enter a valid shade name."
+        });
+      }
+
+      const product = db.prepare(`
+        SELECT product_id
+        FROM products
+        WHERE product_id = ?
+      `).get(productId);
+
+      if (!product) {
+        return res.status(404).json({
+          message: "Product not found."
+        });
+      }
+
+      const existingShade = db.prepare(`
+        SELECT shade_id
+        FROM product_shades
+        WHERE product_id = ?
+        AND LOWER(shade_name) = LOWER(?)
+      `).get(productId, shadeName);
+
+      if (existingShade) {
+        return res.status(400).json({
+          message: "This shade already exists."
+        });
+      }
+
+      const result = db.prepare(`
+        INSERT INTO product_shades (
+          product_id,
+          shade_name
+        )
+        VALUES (?, ?)
+      `).run(productId, shadeName);
+
+      res.status(201).json({
+        message: "Shade added successfully!",
+        shade_id: Number(result.lastInsertRowid)
+      });
+
+    } catch (error) {
+      console.error("Add shade error:", error);
+
+      res.status(500).json({
+        message: "Unable to add shade."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: DELETE PRODUCT SHADE
+// =====================================
+
+app.delete(
+  "/api/products/:productId/shades/:shadeId",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const productId = Number(req.params.productId);
+      const shadeId = Number(req.params.shadeId);
+
+      if (
+        !Number.isInteger(productId) ||
+        productId <= 0 ||
+        !Number.isInteger(shadeId) ||
+        shadeId <= 0
+      ) {
+        return res.status(400).json({
+          message: "Invalid product or shade ID."
+        });
+      }
+
+      const shade = db.prepare(`
+        SELECT shade_id
+        FROM product_shades
+        WHERE shade_id = ?
+        AND product_id = ?
+      `).get(shadeId, productId);
+
+      if (!shade) {
+        return res.status(404).json({
+          message: "Shade not found."
+        });
+      }
+
+      db.prepare(`
+        DELETE FROM product_shades
+        WHERE shade_id = ?
+        AND product_id = ?
+      `).run(shadeId, productId);
+
+      res.json({
+        message: "Shade deleted successfully!"
+      });
+
+    } catch (error) {
+      console.error("Delete shade error:", error);
+
+      res.status(500).json({
+        message: "Unable to delete shade."
+      });
+    }
+  }
+);
+
 // =====================================
 // GET USER PROFILE
 // =====================================
@@ -1649,7 +2095,6 @@ app.delete("/api/users/:id", verifyToken, verifyAdmin, (req, res) => {
     });
   }
 });
-
 // =====================================
 // CUSTOMER: GET AVAILABLE PRODUCTS
 // =====================================
@@ -1672,10 +2117,24 @@ app.get(
         LEFT JOIN categories c
           ON p.category_id = c.category_id
         WHERE p.stock > 0
+          AND p.is_active = 1
+          AND c.is_active = 1
         ORDER BY p.product_name ASC
       `).all();
 
-      res.json(products);
+      const getShades = db.prepare(`
+        SELECT shade_id, shade_name
+        FROM product_shades
+        WHERE product_id = ?
+        ORDER BY shade_name ASC
+      `);
+
+      const result = products.map(product => ({
+        ...product,
+        shades: getShades.all(product.product_id)
+      }));
+
+      res.json(result);
 
     } catch (error) {
       console.error("Customer products error:", error);
@@ -1686,6 +2145,7 @@ app.get(
     }
   }
 );
+
 
 // =====================================
 // CUSTOMER: GET OWN ORDERS
@@ -1724,6 +2184,7 @@ app.get(
         SELECT
           od.product_id,
           p.product_name,
+          od.shade,
           od.quantity,
           od.price,
           od.subtotal
@@ -1749,6 +2210,7 @@ app.get(
     }
   }
 );
+
 
 // =====================================
 // CUSTOMER: PLACE ORDER
@@ -1780,11 +2242,16 @@ app.post(
         });
       }
 
+      // COMBINE SAME PRODUCT AND SAME SHADE ONLY
       const combinedItems = {};
 
       for (const item of items) {
         const productId = Number(item.product_id);
         const quantity = Number(item.quantity);
+
+        const shade = typeof item.shade === "string"
+          ? item.shade.trim()
+          : "";
 
         if (
           !Number.isInteger(productId) ||
@@ -1797,21 +2264,43 @@ app.post(
           });
         }
 
-        combinedItems[productId] =
-          (combinedItems[productId] || 0) + quantity;
+        const itemKey = JSON.stringify([
+          productId,
+          shade
+        ]);
+
+        if (!combinedItems[itemKey]) {
+          combinedItems[itemKey] = {
+            product_id: productId,
+            shade,
+            quantity: 0
+          };
+        }
+
+        combinedItems[itemKey].quantity += quantity;
       }
 
       const orderItems = [];
       let totalAmount = 0;
 
-      for (const productId of Object.keys(combinedItems)) {
-        const quantity = combinedItems[productId];
+      const getProduct = db.prepare(`
+        SELECT
+          product_id,
+          product_name,
+          price,
+          stock
+        FROM products
+        WHERE product_id = ?
+      `);
 
-        const product = db.prepare(`
-          SELECT product_id, product_name, price, stock
-          FROM products
-          WHERE product_id = ?
-        `).get(Number(productId));
+      const getProductShades = db.prepare(`
+        SELECT shade_name
+        FROM product_shades
+        WHERE product_id = ?
+      `);
+
+      for (const item of Object.values(combinedItems)) {
+        const product = getProduct.get(item.product_id);
 
         if (!product) {
           return res.status(404).json({
@@ -1819,25 +2308,64 @@ app.post(
           });
         }
 
-        if (quantity > product.stock) {
+        if (item.quantity > product.stock) {
           return res.status(400).json({
             message:
               `Not enough stock for ${product.product_name}. Available stock: ${product.stock}.`
           });
         }
 
-        const subtotal = Number(product.price) * quantity;
+        // CHECK IF PRODUCT HAS AVAILABLE SHADES
+        const availableShades = getProductShades.all(
+          product.product_id
+        );
+
+        let selectedShade = null;
+
+        if (availableShades.length > 0) {
+          if (!item.shade) {
+            return res.status(400).json({
+              message:
+                `Please select a shade for ${product.product_name}.`
+            });
+          }
+
+          const matchingShade = availableShades.find(
+            shade =>
+              shade.shade_name.toLowerCase() ===
+              item.shade.toLowerCase()
+          );
+
+          if (!matchingShade) {
+            return res.status(400).json({
+              message:
+                `Invalid shade selected for ${product.product_name}.`
+            });
+          }
+
+          selectedShade = matchingShade.shade_name;
+
+        } else if (item.shade) {
+          return res.status(400).json({
+            message:
+              `${product.product_name} does not have shade options.`
+          });
+        }
+
+        const subtotal = Number(product.price) * item.quantity;
 
         totalAmount += subtotal;
 
         orderItems.push({
           product_id: product.product_id,
-          quantity,
+          shade: selectedShade,
+          quantity: item.quantity,
           price: Number(product.price),
           subtotal
         });
       }
 
+      // SAVE ORDER AND ORDER DETAILS
       const createOrder = db.transaction(() => {
 
         const orderResult = db.prepare(`
@@ -1854,14 +2382,22 @@ app.post(
 
         const insertOrderItem = db.prepare(`
           INSERT INTO order_details
-          (order_id, product_id, quantity, price, subtotal)
-          VALUES (?, ?, ?, ?, ?)
+          (
+            order_id,
+            product_id,
+            shade,
+            quantity,
+            price,
+            subtotal
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
         `);
 
         for (const item of orderItems) {
           insertOrderItem.run(
             orderId,
             item.product_id,
+            item.shade,
             item.quantity,
             item.price,
             item.subtotal
@@ -2003,12 +2539,11 @@ app.delete(
     }
   }
 );
+// =====================================
+// ADMIN AND STAFF: GET ALL PRODUCTS
+// =====================================
 
- // =====================================
- // ADMIN AND STAFF: GET ALL PRODUCTS
- // =====================================
-
- app.get(
+app.get(
   "/api/products",
   verifyToken,
   (req, res) => {
@@ -2036,6 +2571,8 @@ app.delete(
         FROM products p
         LEFT JOIN categories c
           ON p.category_id = c.category_id
+        WHERE p.is_active = 1
+          AND c.is_active = 1
         ORDER BY p.product_id DESC
       `).all();
 
@@ -2050,51 +2587,6 @@ app.delete(
     }
   }
 );
-
-
- // =====================================
- // ADMIN: GET INVENTORY HISTORY
- // =====================================
-
- app.get(
-  "/api/inventory",
-  verifyToken,
-  verifyAdmin,
-  (req, res) => {
-    try {
-      const inventory = db.prepare(`
-        SELECT
-          i.inventory_id,
-          i.product_id,
-          p.product_name,
-          i.quantity,
-          CASE
-            WHEN UPPER(i.movement_type) = 'IN'
-              OR i.movement_type = 'Stock In'
-            THEN 'Stock In'
-            ELSE 'Stock Out'
-          END AS movement_type,
-          i.movement_date,
-          i.remarks
-        FROM inventory i
-        LEFT JOIN products p
-          ON i.product_id = p.product_id
-        ORDER BY i.inventory_id DESC
-      `).all();
-
-      res.json(inventory);
-
-    } catch (error) {
-      console.error("Load inventory error:", error);
-
-      res.status(500).json({
-        message: "Unable to load inventory records.",
-        error: error.message
-      });
-    }
-  }
-);
-
 
 // =====================================
 // ADMIN: UPDATE INVENTORY
