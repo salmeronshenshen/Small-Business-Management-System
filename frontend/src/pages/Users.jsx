@@ -197,7 +197,7 @@ function Users() {
 
       {/* SIDEBAR */}
       <aside className="dashboard-sidebar">
-        <h2>Small Business Management.</h2>
+        <h2>Beauty Finds♥.</h2>
 
         <nav>
           <Link to="/dashboard">🏠 Dashboard</Link>
