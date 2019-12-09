@@ -2592,6 +2592,7 @@ app.delete(
     }
   }
 );
+
 // =====================================
 // ADMIN AND STAFF: GET ALL PRODUCTS
 // =====================================
@@ -2624,8 +2625,6 @@ app.get(
         FROM products p
         LEFT JOIN categories c
           ON p.category_id = c.category_id
-        WHERE p.is_active = 1
-          AND c.is_active = 1
         ORDER BY p.product_id DESC
       `).all();
 
@@ -2636,6 +2635,84 @@ app.get(
 
       res.status(500).json({
         message: "Unable to load products."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: GET ALL INVENTORY RECORDS
+// =====================================
+
+app.get(
+  "/api/inventory",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const inventory = db.prepare(`
+        SELECT
+          i.inventory_id,
+          i.product_id,
+          p.product_name,
+          i.quantity,
+          i.movement_type,
+          i.movement_date,
+          i.remarks
+        FROM inventory i
+        LEFT JOIN products p
+          ON i.product_id = p.product_id
+        ORDER BY i.inventory_id DESC
+      `).all();
+
+      res.json(inventory);
+
+    } catch (error) {
+      console.error("Get inventory error:", error);
+
+      res.status(500).json({
+        message: "Failed to load inventory records."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: GET INVENTORY RECORDS
+// =====================================
+
+app.get(
+  "/api/inventory",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const inventory = db.prepare(`
+        SELECT
+          i.inventory_id,
+          i.product_id,
+          p.product_name,
+          i.quantity,
+          CASE
+            WHEN i.movement_type = 'IN' THEN 'Stock In'
+            WHEN i.movement_type = 'OUT' THEN 'Stock Out'
+            ELSE i.movement_type
+          END AS movement_type,
+          i.movement_date,
+          i.remarks
+        FROM inventory i
+        LEFT JOIN products p
+          ON i.product_id = p.product_id
+        ORDER BY i.inventory_id DESC
+      `).all();
+
+      res.json(inventory);
+
+    } catch (error) {
+      console.error("Get inventory error:", error);
+
+      res.status(500).json({
+        message: "Failed to load inventory records."
       });
     }
   }
