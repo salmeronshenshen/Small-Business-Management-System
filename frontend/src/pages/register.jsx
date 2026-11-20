@@ -9,6 +9,7 @@ function Register() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -44,46 +45,125 @@ function Register() {
   };
 
   return (
-    <div className="auth-container">
-      <form className="auth-card" onSubmit={handleRegister}>
-        <h1>Create Account</h1>
-        <p>Small Business Management System</p>
+    <div className="sb-auth-container">
 
-        {message && <div className="message">{message}</div>}
+      {/* BACKGROUND DECORATIONS */}
+      <div className="sb-decoration heart-one">♡</div>
+      <div className="sb-decoration heart-two">♥</div>
+      <div className="sb-decoration heart-three">♡</div>
+      <div className="sb-decoration heart-four">♥</div>
+      <div className="sb-decoration sparkle-one">✦</div>
+      <div className="sb-decoration sparkle-two">✦</div>
 
-        <label>Full Name</label>
-        <input
-          type="text"
-          placeholder="Enter your full name"
-          value={fullname}
-          onChange={(e) => setFullname(e.target.value)}
-          required
-        />
+      <form className="sb-auth-card" onSubmit={handleRegister}>
 
-        <label>Username</label>
-        <input
-          type="text"
-          placeholder="Enter username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-        />
+        {/* STORE IMAGE */}
+        <div className="sb-store-image">
+          <img
+            src="/store.png"
+            alt="Small Business Store"
+          />
+        </div>
 
-        <label>Password</label>
-        <input
-          type="password"
-          placeholder="Enter password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength="6"
-        />
+        {/* BRAND */}
+        <div className="sb-brand">
+          <h2>Small Business</h2>
+          <p>By Shen</p>
+        </div>
 
-        <button type="submit">Register</button>
+        {/* HEADING */}
+        <h1 className="sb-register-heading">
+          Create Your Account
+        </h1>
 
-        <p className="auth-link">
-          Already have an account? <Link to="/">Login</Link>
+        <p className="sb-subtitle">
+          Join Small Business and grow your business.
         </p>
+
+        {/* HEART DIVIDER */}
+        <div className="sb-divider">
+          <span></span>
+          <b>♥</b>
+          <span></span>
+        </div>
+
+        {message && (
+          <div className="sb-message">
+            {message}
+          </div>
+        )}
+
+        {/* FULL NAME */}
+        <div className="sb-input-group">
+          <label>
+            <span className="sb-field-icon">♟</span>
+            Full Name
+          </label>
+
+          <input
+            type="text"
+            placeholder="Enter your full name"
+            value={fullname}
+            onChange={(e) => setFullname(e.target.value)}
+            required
+          />
+        </div>
+
+        {/* USERNAME */}
+        <div className="sb-input-group">
+          <label>
+            <span className="sb-field-icon">♟</span>
+            Username
+          </label>
+
+          <input
+            type="text"
+            placeholder="Enter username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </div>
+
+        {/* PASSWORD */}
+        <div className="sb-input-group">
+          <label>
+            <span className="sb-field-icon">🔒</span>
+            Password
+          </label>
+
+          <div className="sb-password-field">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Enter password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength="6"
+            />
+
+            <button
+              type="button"
+              className="sb-toggle-password"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "🙈" : "👁"}
+            </button>
+          </div>
+        </div>
+
+        {/* REGISTER BUTTON */}
+        <button type="submit" className="sb-login-button">
+          Register
+        </button>
+
+        {/* LOGIN LINK */}
+        <p className="sb-auth-link">
+          Already have an account?
+          <Link to="/">Login</Link>
+        </p>
+
       </form>
     </div>
   );

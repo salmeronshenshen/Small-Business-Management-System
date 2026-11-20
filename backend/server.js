@@ -8,102 +8,652 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
-const PORT = 5000;
-const SECRET_KEY = "small-business-secret-key";
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Database connection
+// =====================================
+// DATABASE SETUP
+// =====================================
+
 const databaseFolder = path.join(__dirname, "database");
 
 if (!fs.existsSync(databaseFolder)) {
   fs.mkdirSync(databaseFolder, { recursive: true });
 }
 
-const db = new Database(path.join(databaseFolder, "business.db"));
+const db = new Database(
+  path.join(databaseFolder, "business.db")
+);
 
 db.pragma("foreign_keys = ON");
 
-// Create database tables
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-  user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fullname TEXT NOT NULL,
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  role TEXT DEFAULT 'Staff',
-  status TEXT DEFAULT 'Active'
+// =====================================
+// CREATE USERS TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fullname TEXT NOT NULL,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT DEFAULT 'Customer',
+    status TEXT DEFAULT 'Active'
+  )
+`).run();
+
+// =====================================
+// CREATE CATEGORIES TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS categories (
+    category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_name TEXT NOT NULL
+  )
+`).run();
+
+// =====================================
+// CREATE PRODUCTS TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS products (
+    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_name TEXT NOT NULL,
+    category_id INTEGER,
+    price REAL DEFAULT 0,
+    stock INTEGER DEFAULT 0,
+    FOREIGN KEY (category_id) REFERENCES categories(category_id)
+  )
+`).run();
+
+// =====================================
+// PRODUCTS TABLE MIGRATION
+// =====================================
+
+const productColumns = db.prepare(
+  "PRAGMA table_info(products)"
+).all();
+
+const hasStock = productColumns.some(
+  column => column.name === "stock"
 );
 
-CREATE TABLE IF NOT EXISTS categories (
-  category_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  category_name TEXT NOT NULL UNIQUE
+if (!hasStock) {
+  db.prepare(`
+    ALTER TABLE products
+    ADD COLUMN stock INTEGER DEFAULT 0
+  `).run();
+
+  // COPY OLD STOCK VALUES IF AVAILABLE
+  const oldStockColumn = productColumns.find(
+    column =>
+      ["stock_quantity", "quantity", "stocks"].includes(column.name)
+  );
+
+  if (oldStockColumn) {
+    const allowedColumns = [
+      "stock_quantity",
+      "quantity",
+      "stocks"
+    ];
+
+    if (allowedColumns.includes(oldStockColumn.name)) {
+      db.prepare(`
+        UPDATE products
+        SET stock = COALESCE(${oldStockColumn.name}, 0)
+      `).run();
+    }
+  }
+
+  console.log("Products stock column successfully migrated!");
+}
+
+// =====================================
+// CREATE CUSTOMERS TABLE
+// IMPORTANT: EXISTING DATABASE USES
+// customer_name, contact_number
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS customers (
+    customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_name TEXT NOT NULL,
+    contact_number TEXT,
+    address TEXT,
+    user_id INTEGER
+  )
+`).run();
+
+// ADD USER ID IF MISSING
+const customerColumns = db.prepare(
+  "PRAGMA table_info(customers)"
+).all();
+
+const hasUserId = customerColumns.some(
+  column => column.name === "user_id"
 );
 
-CREATE TABLE IF NOT EXISTS products (
-  product_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  product_name TEXT NOT NULL,
-  category_id INTEGER,
-  price REAL NOT NULL,
-  stock_quantity INTEGER DEFAULT 0,
-  FOREIGN KEY (category_id) REFERENCES categories(category_id)
+if (!hasUserId) {
+  db.prepare(`
+    ALTER TABLE customers
+    ADD COLUMN user_id INTEGER
+  `).run();
+}
+
+// CREATE UNIQUE INDEX
+db.prepare(`
+  CREATE UNIQUE INDEX IF NOT EXISTS
+  idx_customers_user_id
+  ON customers(user_id)
+  WHERE user_id IS NOT NULL
+`).run();
+
+// =====================================
+// CREATE ORDERS TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS orders (
+    order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER,
+    order_date TEXT DEFAULT CURRENT_TIMESTAMP,
+    total_amount REAL DEFAULT 0,
+    status TEXT DEFAULT 'Pending',
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+  )
+`).run();
+
+// =====================================
+// CREATE ORDER DETAILS TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS order_details (
+    detail_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER,
+    product_id INTEGER,
+    quantity INTEGER DEFAULT 1,
+    price REAL DEFAULT 0,
+    subtotal REAL DEFAULT 0,
+    FOREIGN KEY (order_id) REFERENCES orders(order_id),
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+  )
+`).run();
+
+// =====================================
+// CREATE PAYMENTS TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS payments (
+    payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER,
+    amount_paid REAL DEFAULT 0,
+    payment_method TEXT,
+    payment_date TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+  )
+`).run();
+
+// ADD CHANGE AMOUNT IF MISSING
+const paymentColumns = db.prepare(
+  "PRAGMA table_info(payments)"
+).all();
+
+const hasChangeAmount = paymentColumns.some(
+  column => column.name === "change_amount"
 );
 
-CREATE TABLE IF NOT EXISTS customers (
-  customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  customer_name TEXT NOT NULL,
-  contact_number TEXT,
-  address TEXT
+if (!hasChangeAmount) {
+  db.prepare(`
+    ALTER TABLE payments
+    ADD COLUMN change_amount REAL DEFAULT 0
+  `).run();
+}
+
+// ADD PAYMENT METHOD IF MISSING
+const hasPaymentMethod = paymentColumns.some(
+  column => column.name === "payment_method"
 );
 
-CREATE TABLE IF NOT EXISTS orders (
-  order_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  customer_id INTEGER,
-  total_amount REAL NOT NULL,
-  order_date TEXT DEFAULT CURRENT_TIMESTAMP,
-  status TEXT DEFAULT 'Paid',
-  FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+if (!hasPaymentMethod) {
+  db.prepare(`
+    ALTER TABLE payments
+    ADD COLUMN payment_method TEXT
+  `).run();
+}
+
+// =====================================
+// CREATE INVENTORY TABLE
+// =====================================
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS inventory (
+    inventory_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER,
+    quantity INTEGER DEFAULT 0,
+    movement_type TEXT,
+    movement_date TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+  )
+`).run();
+
+// ADD REMARKS COLUMN IF MISSING
+
+const inventoryColumns = db.prepare(
+  "PRAGMA table_info(inventory)"
+).all();
+
+const hasRemarks = inventoryColumns.some(
+  column => column.name === "remarks"
 );
 
-CREATE TABLE IF NOT EXISTS order_details (
-  detail_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  order_id INTEGER NOT NULL,
-  product_id INTEGER NOT NULL,
-  quantity INTEGER NOT NULL,
-  price REAL NOT NULL,
-  subtotal REAL NOT NULL,
-  FOREIGN KEY (order_id) REFERENCES orders(order_id),
-  FOREIGN KEY (product_id) REFERENCES products(product_id)
-);
+if (!hasRemarks) {
+  db.prepare(`
+    ALTER TABLE inventory
+    ADD COLUMN remarks TEXT
+  `).run();
+}
 
-CREATE TABLE IF NOT EXISTS payments (
-  payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  order_id INTEGER NOT NULL,
-  amount_paid REAL NOT NULL,
-  change_amount REAL NOT NULL,
-  payment_date TEXT DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (order_id) REFERENCES orders(order_id)
-);
+// =====================================
+// DEFAULT CATEGORIES AND PRODUCTS
+// =====================================
 
-CREATE TABLE IF NOT EXISTS inventory (
-  inventory_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  product_id INTEGER NOT NULL,
-  movement_type TEXT NOT NULL,
-  quantity INTEGER NOT NULL,
-  movement_date TEXT DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (product_id) REFERENCES products(product_id)
-);
+const defaultCategories = [
+  "Lippie",
+  "Bags",
+  "Hairclip",
+  "Tops",
+  "Jacket",
+  "Pants",
+  "Makeup",
+  "Sandals"
+];
+
+// INSERT DEFAULT CATEGORIES
+const insertCategory = db.prepare(`
+  INSERT INTO categories (category_name)
+  SELECT ?
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM categories
+    WHERE LOWER(category_name) = LOWER(?)
+  )
 `);
 
-// Authentication middleware
+defaultCategories.forEach((category) => {
+  insertCategory.run(category, category);
+});
+
+// DEFAULT PRODUCTS
+const defaultProducts = [
+  { name: "Lip Tint", category: "Lippie", price: 99, stock: 20 },
+  { name: "Lip Gloss", category: "Lippie", price: 120, stock: 15 },
+
+  { name: "Mini Shoulder Bag", category: "Bags", price: 250, stock: 10 },
+  { name: "Tote Bag", category: "Bags", price: 180, stock: 15 },
+
+  { name: "Ribbon Hairclip", category: "Hairclip", price: 35, stock: 30 },
+  { name: "Pearl Hairclip", category: "Hairclip", price: 45, stock: 25 },
+
+  { name: "Casual Crop Top", category: "Tops", price: 199, stock: 15 },
+  { name: "Basic T-Shirt", category: "Tops", price: 180, stock: 20 },
+
+  { name: "Denim Jacket", category: "Jacket", price: 550, stock: 8 },
+  { name: "Casual Jacket", category: "Jacket", price: 450, stock: 10 },
+
+  { name: "Wide Leg Pants", category: "Pants", price: 350, stock: 12 },
+  { name: "Cargo Pants", category: "Pants", price: 420, stock: 10 },
+
+  { name: "Blush On", category: "Makeup", price: 100, stock: 20 },
+  { name: "Face Powder", category: "Makeup", price: 150, stock: 15 },
+
+  { name: "Flat Sandals", category: "Sandals", price: 220, stock: 10 },
+  { name: "Casual Sandals", category: "Sandals", price: 280, stock: 12 }
+];
+
+// INSERT DEFAULT PRODUCTS ONLY ONCE
+const insertProduct = db.prepare(`
+  INSERT INTO products (
+    product_name,
+    category_id,
+    price,
+    stock
+  )
+  SELECT ?, ?, ?, ?
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM products
+    WHERE LOWER(product_name) = LOWER(?)
+    AND category_id = ?
+  )
+`);
+
+const insertInitialInventory = db.prepare(`
+  INSERT INTO inventory (
+    product_id,
+    quantity,
+    movement_type
+  )
+  VALUES (?, ?, 'IN')
+`);
+
+const seedProducts = db.transaction(() => {
+  for (const product of defaultProducts) {
+    const category = db.prepare(`
+      SELECT category_id
+      FROM categories
+      WHERE LOWER(category_name) = LOWER(?)
+    `).get(product.category);
+
+    if (!category) continue;
+
+    const existingProduct = db.prepare(`
+      SELECT product_id
+      FROM products
+      WHERE LOWER(product_name) = LOWER(?)
+      AND category_id = ?
+    `).get(product.name, category.category_id);
+
+    if (!existingProduct) {
+      const result = insertProduct.run(
+        product.name,
+        category.category_id,
+        product.price,
+        product.stock,
+        product.name,
+        category.category_id
+      );
+
+      if (result.changes > 0) {
+        insertInitialInventory.run(
+          Number(result.lastInsertRowid),
+          product.stock
+        );
+      }
+    }
+  }
+});
+
+seedProducts();
+
+console.log("Default categories and products loaded!");
+
+// =====================================
+// CONNECT EXISTING CUSTOMER ACCOUNTS
+// =====================================
+
+const existingCustomerUsers = db.prepare(`
+  SELECT user_id, fullname
+  FROM users
+  WHERE role = 'Customer'
+`).all();
+
+const findCustomerLink = db.prepare(`
+  SELECT customer_id
+  FROM customers
+  WHERE user_id = ?
+`);
+
+const insertMissingCustomer = db.prepare(`
+  INSERT INTO customers (customer_name, user_id)
+  VALUES (?, ?)
+`);
+
+const connectExistingCustomers = db.transaction(() => {
+  for (const user of existingCustomerUsers) {
+    const linkedCustomer = findCustomerLink.get(user.user_id);
+
+    if (!linkedCustomer) {
+      insertMissingCustomer.run(
+        user.fullname,
+        user.user_id
+      );
+    }
+  }
+});
+
+connectExistingCustomers();
+
+// =====================================
+// CREATE DEFAULT ADMIN ACCOUNT
+// =====================================
+
+const admin = db.prepare(`
+  SELECT *
+  FROM users
+  WHERE username = ?
+`).get("admin");
+
+if (!admin) {
+  const hashedPassword = bcrypt.hashSync("Admin123!", 10);
+
+  db.prepare(`
+    INSERT INTO users
+    (fullname, username, password, role, status)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    "Administrator",
+    "admin",
+    hashedPassword,
+    "Admin",
+    "Active"
+  );
+
+  console.log("Default Admin account created!");
+} else {
+  db.prepare(`
+    UPDATE users
+    SET role = 'Admin'
+    WHERE username = 'admin'
+  `).run();
+}
+
+// =====================================
+// SECRET KEY
+// =====================================
+
+const SECRET_KEY = "small-business-secret-key";
+
+// =====================================
+// HOME ROUTE
+// =====================================
+
+app.get("/", (req, res) => {
+  res.send("Small Business Management System API is running!");
+});
+
+// =====================================
+// CUSTOMER REGISTRATION
+// =====================================
+
+app.post("/api/auth/register", (req, res) => {
+  try {
+    const { fullname, username, password } = req.body;
+
+    if (
+      typeof fullname !== "string" ||
+      typeof username !== "string" ||
+      typeof password !== "string" ||
+      !fullname.trim() ||
+      !username.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        message: "Please fill in all fields."
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters."
+      });
+    }
+
+    const cleanFullname = fullname.trim();
+    const cleanUsername = username.trim();
+
+    const existingUser = db.prepare(`
+      SELECT user_id
+      FROM users
+      WHERE username = ?
+    `).get(cleanUsername);
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "Username already exists."
+      });
+    }
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const registerCustomer = db.transaction(() => {
+
+      const userResult = db.prepare(`
+        INSERT INTO users
+        (fullname, username, password, role, status)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        cleanFullname,
+        cleanUsername,
+        hashedPassword,
+        "Customer",
+        "Active"
+      );
+
+      const userId = Number(userResult.lastInsertRowid);
+
+      db.prepare(`
+        INSERT INTO customers
+        (customer_name, user_id)
+        VALUES (?, ?)
+      `).run(
+        cleanFullname,
+        userId
+      );
+
+      return userId;
+    });
+
+    registerCustomer();
+
+    res.status(201).json({
+      message: "Customer account created successfully!"
+    });
+
+  } catch (error) {
+    console.error("Registration error:", error);
+
+    if (error.code === "SQLITE_CONSTRAINT_UNIQUE") {
+      return res.status(409).json({
+        message: "Username already exists."
+      });
+    }
+
+    res.status(500).json({
+      message: "Registration failed."
+    });
+  }
+});
+
+// =====================================
+// LOGIN ROUTE
+// CUSTOMER AND ADMIN
+// =====================================
+
+app.post("/api/auth/login", (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (
+      typeof username !== "string" ||
+      typeof password !== "string" ||
+      !username.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        message: "Please enter your username and password."
+      });
+    }
+
+    const user = db.prepare(`
+      SELECT *
+      FROM users
+      WHERE username = ?
+    `).get(username.trim());
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid username or password."
+      });
+    }
+
+    if (user.status !== "Active") {
+      return res.status(403).json({
+        message: "Your account is inactive."
+      });
+    }
+
+    const passwordMatch = bcrypt.compareSync(
+      password,
+      user.password
+    );
+    
+    console.log("LOGIN DIAGNOSTIC:", {
+      usernameFound: !!user,
+      storedPasswordIsBcrypt: user.password.startsWith("$2"),
+      passwordMatch: passwordMatch
+    });
+
+    if (!passwordMatch) {
+      return res.status(401).json({
+        message: "Invalid username or password."
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        user_id: user.user_id,
+        username: user.username,
+        role: user.role
+      },
+      SECRET_KEY,
+      { expiresIn: "1d" }
+    );
+
+    res.json({
+      message: "Login successful!",
+      token: token,
+      user: {
+        user_id: user.user_id,
+        fullname: user.fullname,
+        username: user.username,
+        role: user.role
+      }
+    });
+
+  } catch (error) {
+    console.error("Login error:", error);
+
+    res.status(500).json({
+      message: "Login failed."
+    });
+  }
+});
+
+// =====================================
+// VERIFY TOKEN
+// =====================================
+
 function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader) {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({
-      message: "Please login first."
+      message: "No valid token provided."
     });
   }
 
@@ -119,624 +669,2033 @@ function verifyToken(req, res, next) {
   }
 }
 
-// Home
-app.get("/", (req, res) => {
-  res.send("Small Business Management System API is running!");
-});
+// =====================================
+// CUSTOMER ONLY
+// =====================================
 
-// REGISTER
-app.post("/api/auth/register", (req, res) => {
-  const { fullname, username, password } = req.body;
-
-  if (!fullname || !username || !password) {
-    return res.status(400).json({
-      message: "Please complete all fields."
-    });
-  }
-
-  if (password.length < 6) {
-    return res.status(400).json({
-      message: "Password must be at least 6 characters."
-    });
-  }
-
-  try {
-    const hashedPassword = bcrypt.hashSync(password, 10);
-
-    db.prepare(`
-      INSERT INTO users (fullname, username, password)
-      VALUES (?, ?, ?)
-    `).run(fullname, username, hashedPassword);
-
-    res.status(201).json({
-      message: "Registration successful!"
-    });
-  } catch (error) {
-    res.status(409).json({
-      message: "Username already exists."
-    });
-  }
-});
-
-// LOGIN
-app.post("/api/auth/login", (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({
-      message: "Please enter username and password."
-    });
-  }
-
-  const user = db.prepare(`
-    SELECT * FROM users WHERE username = ?
-  `).get(username);
-
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    return res.status(401).json({
-      message: "Incorrect username or password."
-    });
-  }
-
-  if (user.status !== "Active") {
+function verifyCustomer(req, res, next) {
+  if (req.user.role !== "Customer") {
     return res.status(403).json({
-      message: "Your account is inactive."
+      message: "Customer access only."
     });
   }
 
-  const token = jwt.sign(
-    {
-      user_id: user.user_id,
-      username: user.username,
-      role: user.role
-    },
-    SECRET_KEY,
-    { expiresIn: "1d" }
-  );
+  next();
+}
 
-  res.json({
-    message: "Login successful!",
-    token,
-    user: {
-      user_id: user.user_id,
-      fullname: user.fullname,
-      username: user.username,
-      role: user.role
+// =====================================
+// ADMIN AND STAFF ONLY
+// =====================================
+
+function verifyAdminOrStaff(req, res, next) {
+  if (
+    req.user.role !== "Admin" &&
+    req.user.role !== "Staff"
+  ) {
+    return res.status(403).json({
+      message: "Admin and Staff access only."
+    });
+  }
+
+  next();
+}
+
+// =====================================
+// ADMIN ONLY
+// =====================================
+
+function verifyAdmin(req, res, next) {
+  if (req.user.role !== "Admin") {
+    return res.status(403).json({
+      message: "Admin access only."
+    });
+  }
+
+  next();
+}
+
+// =====================================
+// ADMIN: GET CATEGORIES
+// =====================================
+
+app.get(
+  "/api/categories",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const categories = db.prepare(`
+        SELECT *
+        FROM categories
+        ORDER BY category_name ASC
+      `).all();
+
+      res.json(categories);
+
+    } catch (error) {
+      console.error("Categories error:", error);
+
+      res.status(500).json({
+        message: "Unable to load categories."
+      });
     }
-  });
-});
-
-// Apply authentication to the remaining API routes
-app.use("/api", verifyToken);
-
-// DASHBOARD
-app.get("/api/dashboard", (req, res) => {
-  const totalProducts = db.prepare(
-    "SELECT COUNT(*) AS total FROM products"
-  ).get().total;
-
-  const totalCustomers = db.prepare(
-    "SELECT COUNT(*) AS total FROM customers"
-  ).get().total;
-
-  const totalOrders = db.prepare(
-    "SELECT COUNT(*) AS total FROM orders"
-  ).get().total;
-
-  const totalSales = db.prepare(
-    "SELECT COALESCE(SUM(total_amount), 0) AS total FROM orders WHERE status = 'Paid'"
-  ).get().total;
-
-  res.json({
-    totalProducts,
-    totalCustomers,
-    totalOrders,
-    totalSales
-  });
-});
-
-// CATEGORIES
-app.get("/api/categories", (req, res) => {
-  const categories = db.prepare(
-    "SELECT * FROM categories ORDER BY category_id DESC"
-  ).all();
-
-  res.json(categories);
-});
-
-app.post("/api/categories", (req, res) => {
-  const { category_name } = req.body;
-
-  if (!category_name) {
-    return res.status(400).json({
-      message: "Category name is required."
-    });
   }
+);
 
-  try {
-    const result = db.prepare(
-      "INSERT INTO categories (category_name) VALUES (?)"
-    ).run(category_name);
 
-    res.status(201).json({
-      message: "Category added successfully!",
-      category_id: result.lastInsertRowid
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: "Category already exists or is invalid."
-    });
-  }
-});
+// =====================================
+// ADMIN: ADD CATEGORY
+// =====================================
 
-app.put("/api/categories/:id", (req, res) => {
-  const { category_name } = req.body;
+app.post(
+  "/api/categories",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const { category_name } = req.body;
 
-  const result = db.prepare(
-    "UPDATE categories SET category_name = ? WHERE category_id = ?"
-  ).run(category_name, req.params.id);
+      const cleanName =
+        typeof category_name === "string"
+          ? category_name.trim()
+          : "";
 
-  res.json({
-    message: result.changes
-      ? "Category updated successfully!"
-      : "Category not found."
-  });
-});
+      if (!cleanName) {
+        return res.status(400).json({
+          message: "Please enter a category name."
+        });
+      }
 
-app.delete("/api/categories/:id", (req, res) => {
-  try {
-    const result = db.prepare(
-      "DELETE FROM categories WHERE category_id = ?"
-    ).run(req.params.id);
+      const existingCategory = db.prepare(`
+        SELECT category_id
+        FROM categories
+        WHERE LOWER(category_name) = LOWER(?)
+      `).get(cleanName);
 
-    res.json({
-      message: result.changes
-        ? "Category deleted successfully!"
-        : "Category not found."
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: "Cannot delete a category that is being used."
-    });
-  }
-});
+      if (existingCategory) {
+        return res.status(409).json({
+          message: "Category already exists."
+        });
+      }
 
-// PRODUCTS
-app.get("/api/products", (req, res) => {
-  const products = db.prepare(`
-    SELECT products.*, categories.category_name
-    FROM products
-    LEFT JOIN categories
-    ON products.category_id = categories.category_id
-    ORDER BY products.product_id DESC
-  `).all();
-
-  res.json(products);
-});
-
-app.post("/api/products", (req, res) => {
-  const { product_name, category_id, price, stock_quantity } = req.body;
-
-  if (!product_name || price == null || stock_quantity == null ||
-      Number(price) < 0 || !Number.isInteger(Number(stock_quantity)) ||
-      Number(stock_quantity) < 0) {
-    return res.status(400).json({
-      message: "Please enter valid product information."
-    });
-  }
-
-  try {
-    const result = db.prepare(`
-      INSERT INTO products
-      (product_name, category_id, price, stock_quantity)
-      VALUES (?, ?, ?, ?)
-    `).run(
-      product_name,
-      category_id || null,
-      Number(price),
-      Number(stock_quantity)
-    );
-
-    if (Number(stock_quantity) > 0) {
       db.prepare(`
-        INSERT INTO inventory
-        (product_id, movement_type, quantity)
-        VALUES (?, 'Stock In', ?)
-      `).run(result.lastInsertRowid, Number(stock_quantity));
+        INSERT INTO categories (category_name)
+        VALUES (?)
+      `).run(cleanName);
+
+      res.status(201).json({
+        message: "Category added successfully!"
+      });
+
+    } catch (error) {
+      console.error("Add category error:", error);
+
+      res.status(500).json({
+        message: "Unable to add category."
+      });
     }
-
-    res.status(201).json({
-      message: "Product added successfully!"
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: "Unable to add product. Check the category."
-    });
   }
-});
+);
 
-app.put("/api/products/:id", (req, res) => {
-  const { product_name, category_id, price, stock_quantity } = req.body;
+// =====================================
+// ADMIN: UPDATE CATEGORY
+// =====================================
 
-  if (!product_name || price == null || stock_quantity == null ||
-      Number(price) < 0 || !Number.isInteger(Number(stock_quantity)) ||
-      Number(stock_quantity) < 0) {
-    return res.status(400).json({
-      message: "Please enter valid product information."
-    });
+app.put(
+  "/api/categories/:id",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const categoryId = Number(req.params.id);
+      const { category_name } = req.body;
+
+      const cleanName =
+        typeof category_name === "string"
+          ? category_name.trim()
+          : "";
+
+      if (
+        !Number.isInteger(categoryId) ||
+        categoryId <= 0 ||
+        !cleanName
+      ) {
+        return res.status(400).json({
+          message: "Please enter a valid category name."
+        });
+      }
+
+      const existingCategory = db.prepare(`
+        SELECT category_id
+        FROM categories
+        WHERE category_id = ?
+      `).get(categoryId);
+
+      if (!existingCategory) {
+        return res.status(404).json({
+          message: "Category not found."
+        });
+      }
+
+      const duplicateCategory = db.prepare(`
+        SELECT category_id
+        FROM categories
+        WHERE LOWER(category_name) = LOWER(?)
+        AND category_id != ?
+      `).get(cleanName, categoryId);
+
+      if (duplicateCategory) {
+        return res.status(409).json({
+          message: "Category name already exists."
+        });
+      }
+
+      db.prepare(`
+        UPDATE categories
+        SET category_name = ?
+        WHERE category_id = ?
+      `).run(cleanName, categoryId);
+
+      res.json({
+        message: "Category updated successfully!"
+      });
+
+    } catch (error) {
+      console.error("Update category error:", error);
+
+      res.status(500).json({
+        message: "Unable to update category."
+      });
+    }
   }
+);
 
-  const result = db.prepare(`
-    UPDATE products
-    SET product_name = ?, category_id = ?, price = ?, stock_quantity = ?
-    WHERE product_id = ?
-  `).run(
-    product_name,
-    category_id || null,
-    Number(price),
-    Number(stock_quantity),
-    req.params.id
-  );
+// =====================================
+// ADMIN: DELETE CATEGORY
+// =====================================
 
-  res.json({
-    message: result.changes
-      ? "Product updated successfully!"
-      : "Product not found."
-  });
-});
+app.delete(
+  "/api/categories/:id",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const categoryId = Number(req.params.id);
 
-app.delete("/api/products/:id", (req, res) => {
-  try {
-    const result = db.prepare(
-      "DELETE FROM products WHERE product_id = ?"
-    ).run(req.params.id);
+      if (
+        !Number.isInteger(categoryId) ||
+        categoryId <= 0
+      ) {
+        return res.status(400).json({
+          message: "Invalid category ID."
+        });
+      }
 
-    res.json({
-      message: result.changes
-        ? "Product deleted successfully!"
-        : "Product not found."
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: "Cannot delete a product with existing sales or inventory records."
-    });
+      const category = db.prepare(`
+        SELECT category_id
+        FROM categories
+        WHERE category_id = ?
+      `).get(categoryId);
+
+      if (!category) {
+        return res.status(404).json({
+          message: "Category not found."
+        });
+      }
+
+      const hasProducts = db.prepare(`
+        SELECT product_id
+        FROM products
+        WHERE category_id = ?
+        LIMIT 1
+      `).get(categoryId);
+
+      if (hasProducts) {
+        return res.status(400).json({
+          message: "Cannot delete this category because it has existing products."
+        });
+      }
+
+      db.prepare(`
+        DELETE FROM categories
+        WHERE category_id = ?
+      `).run(categoryId);
+
+      res.json({
+        message: "Category deleted successfully!"
+      });
+
+    } catch (error) {
+      console.error("Delete category error:", error);
+
+      res.status(500).json({
+        message: "Unable to delete category."
+      });
+    }
   }
-});
+);
 
-// CUSTOMERS
-app.get("/api/customers", (req, res) => {
-  const customers = db.prepare(
-    "SELECT * FROM customers ORDER BY customer_id DESC"
-  ).all();
 
-  res.json(customers);
-});
+// =====================================
+// ADMIN: ADD PRODUCT
+// =====================================
 
-app.post("/api/customers", (req, res) => {
-  const { customer_name, contact_number, address } = req.body;
+app.post(
+  "/api/products",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const {
+        product_name,
+        category_id,
+        price,
+        stock_quantity
+      } = req.body;
 
-  if (!customer_name) {
-    return res.status(400).json({
-      message: "Customer name is required."
-    });
-  }
+      const cleanName =
+        typeof product_name === "string"
+          ? product_name.trim()
+          : "";
 
-  db.prepare(`
-    INSERT INTO customers (customer_name, contact_number, address)
-    VALUES (?, ?, ?)
-  `).run(customer_name, contact_number || "", address || "");
+      const categoryId = Number(category_id);
+      const productPrice = Number(price);
+      const stock = Number(stock_quantity);
 
-  res.status(201).json({
-    message: "Customer added successfully!"
-  });
-});
+      if (
+        !cleanName ||
+        !Number.isInteger(categoryId) ||
+        categoryId <= 0 ||
+        !Number.isFinite(productPrice) ||
+        productPrice < 0 ||
+        !Number.isInteger(stock) ||
+        stock < 0
+      ) {
+        return res.status(400).json({
+          message: "Please enter valid product information."
+        });
+      }
 
-app.put("/api/customers/:id", (req, res) => {
-  const { customer_name, contact_number, address } = req.body;
+      const category = db.prepare(`
+        SELECT category_id
+        FROM categories
+        WHERE category_id = ?
+      `).get(categoryId);
 
-  const result = db.prepare(`
-    UPDATE customers
-    SET customer_name = ?, contact_number = ?, address = ?
-    WHERE customer_id = ?
-  `).run(
-    customer_name,
-    contact_number || "",
-    address || "",
-    req.params.id
-  );
+      if (!category) {
+        return res.status(400).json({
+          message: "Selected category does not exist."
+        });
+      }
 
-  res.json({
-    message: result.changes
-      ? "Customer updated successfully!"
-      : "Customer not found."
-  });
-});
+      const result = db.transaction(() => {
+        const productResult = db.prepare(`
+          INSERT INTO products (
+            product_name,
+            category_id,
+            price,
+            stock
+          )
+          VALUES (?, ?, ?, ?)
+        `).run(
+          cleanName,
+          categoryId,
+          productPrice,
+          stock
+        );
 
-app.delete("/api/customers/:id", (req, res) => {
-  try {
-    const result = db.prepare(
-      "DELETE FROM customers WHERE customer_id = ?"
-    ).run(req.params.id);
-
-    res.json({
-      message: result.changes
-        ? "Customer deleted successfully!"
-        : "Customer not found."
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: "Cannot delete a customer with existing orders."
-    });
-  }
-});
-
-// ORDERS / SALES
-app.get("/api/orders", (req, res) => {
-  const orders = db.prepare(`
-    SELECT orders.*, customers.customer_name
-    FROM orders
-    LEFT JOIN customers
-    ON orders.customer_id = customers.customer_id
-    ORDER BY orders.order_id DESC
-  `).all();
-
-  const getDetails = db.prepare(`
-    SELECT order_details.*, products.product_name
-    FROM order_details
-    JOIN products
-    ON order_details.product_id = products.product_id
-    WHERE order_details.order_id = ?
-  `);
-
-  const result = orders.map(order => ({
-    ...order,
-    items: getDetails.all(order.order_id)
-  }));
-
-  res.json(result);
-});
-
-app.post("/api/orders", (req, res) => {
-  const { customer_id, items, amount_paid } = req.body;
-
-  if (!Array.isArray(items) || items.length === 0 ||
-      amount_paid == null || Number(amount_paid) < 0) {
-    return res.status(400).json({
-      message: "Please provide order items and payment amount."
-    });
-  }
-
-  try {
-    const createOrder = db.transaction(() => {
-      let total = 0;
-      const orderItems = [];
-
-      for (const item of items) {
-        const quantity = Number(item.quantity);
-        const product = db.prepare(
-          "SELECT * FROM products WHERE product_id = ?"
-        ).get(item.product_id);
-
-        if (!product || !Number.isInteger(quantity) || quantity <= 0) {
-          throw new Error("Invalid product or quantity.");
-        }
-
-        if (product.stock_quantity < quantity) {
-          throw new Error(
-            "Not enough stock for " + product.product_name
+        if (stock > 0) {
+          db.prepare(`
+            INSERT INTO inventory (
+              product_id,
+              quantity,
+              movement_type
+            )
+            VALUES (?, ?, 'IN')
+          `).run(
+            Number(productResult.lastInsertRowid),
+            stock
           );
         }
 
-        const subtotal = product.price * quantity;
-        total += subtotal;
+        return productResult.lastInsertRowid;
+      })();
+
+      res.status(201).json({
+        message: "Product added successfully!",
+        product_id: Number(result)
+      });
+
+    } catch (error) {
+      console.error("Add product error:", error);
+
+      res.status(500).json({
+        message: "Unable to add product."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: UPDATE PRODUCT
+// =====================================
+
+app.put(
+  "/api/products/:id",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const productId = Number(req.params.id);
+
+      const {
+        product_name,
+        category_id,
+        price,
+        stock_quantity
+      } = req.body;
+
+      const cleanName =
+        typeof product_name === "string"
+          ? product_name.trim()
+          : "";
+
+      const categoryId = Number(category_id);
+      const productPrice = Number(price);
+      const stock = Number(stock_quantity);
+
+      if (
+        !Number.isInteger(productId) ||
+        productId <= 0 ||
+        !cleanName ||
+        !Number.isInteger(categoryId) ||
+        categoryId <= 0 ||
+        !Number.isFinite(productPrice) ||
+        productPrice < 0 ||
+        !Number.isInteger(stock) ||
+        stock < 0
+      ) {
+        return res.status(400).json({
+          message: "Please enter valid product information."
+        });
+      }
+
+      const existingProduct = db.prepare(`
+        SELECT product_id, stock
+        FROM products
+        WHERE product_id = ?
+      `).get(productId);
+
+      if (!existingProduct) {
+        return res.status(404).json({
+          message: "Product not found."
+        });
+      }
+
+      const category = db.prepare(`
+        SELECT category_id
+        FROM categories
+        WHERE category_id = ?
+      `).get(categoryId);
+
+      if (!category) {
+        return res.status(400).json({
+          message: "Selected category does not exist."
+        });
+      }
+
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE products
+          SET
+            product_name = ?,
+            category_id = ?,
+            price = ?,
+            stock = ?
+          WHERE product_id = ?
+        `).run(
+          cleanName,
+          categoryId,
+          productPrice,
+          stock,
+          productId
+        );
+
+        const stockDifference =
+          stock - Number(existingProduct.stock);
+
+        if (stockDifference !== 0) {
+          db.prepare(`
+            INSERT INTO inventory (
+              product_id,
+              quantity,
+              movement_type
+            )
+            VALUES (?, ?, ?)
+          `).run(
+            productId,
+            Math.abs(stockDifference),
+            stockDifference > 0 ? "IN" : "OUT"
+          );
+        }
+      })();
+
+      res.json({
+        message: "Product updated successfully!"
+      });
+
+    } catch (error) {
+      console.error("Update product error:", error);
+
+      res.status(500).json({
+        message: "Unable to update product."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: DELETE PRODUCT
+// =====================================
+
+app.delete(
+  "/api/products/:id",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const productId = Number(req.params.id);
+
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({
+          message: "Invalid product ID."
+        });
+      }
+
+      const product = db.prepare(`
+        SELECT product_id
+        FROM products
+        WHERE product_id = ?
+      `).get(productId);
+
+      if (!product) {
+        return res.status(404).json({
+          message: "Product not found."
+        });
+      }
+
+      const hasOrders = db.prepare(`
+        SELECT detail_id
+        FROM order_details
+        WHERE product_id = ?
+        LIMIT 1
+      `).get(productId);
+
+      if (hasOrders) {
+        return res.status(400).json({
+          message: "This product has existing order records and cannot be deleted."
+        });
+      }
+
+      db.transaction(() => {
+        db.prepare(`
+          DELETE FROM inventory
+          WHERE product_id = ?
+        `).run(productId);
+
+        db.prepare(`
+          DELETE FROM products
+          WHERE product_id = ?
+        `).run(productId);
+      })();
+
+      res.json({
+        message: "Product deleted successfully!"
+      });
+
+    } catch (error) {
+      console.error("Delete product error:", error);
+
+      res.status(500).json({
+        message: "Unable to delete product."
+      });
+    }
+  }
+);
+
+// =====================================
+// GET USER PROFILE
+// =====================================
+
+app.get("/api/profile", verifyToken, (req, res) => {
+  try {
+    const user = db.prepare(`
+      SELECT user_id, fullname, username, role, status
+      FROM users
+      WHERE user_id = ?
+    `).get(req.user.user_id);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found."
+      });
+    }
+
+    res.json(user);
+
+  } catch (error) {
+    console.error("Profile error:", error);
+
+    res.status(500).json({
+      message: "Unable to load profile."
+    });
+  }
+});
+// =====================================
+// ADMIN AND STAFF DASHBOARD
+// =====================================
+
+app.get("/api/dashboard", verifyToken, (req, res) => {
+  try {
+
+    // ALLOW ADMIN AND STAFF ONLY
+    if (
+      req.user.role !== "Admin" &&
+      req.user.role !== "Staff"
+    ) {
+      return res.status(403).json({
+        message: "Admin and Staff access only."
+      });
+    }
+
+    const totalProducts = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM products
+    `).get().total;
+
+    const totalCustomers = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM customers
+    `).get().total;
+
+    const totalOrders = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM orders
+    `).get().total;
+
+    const totalSales = db.prepare(`
+      SELECT COALESCE(SUM(amount_paid), 0) AS total
+      FROM payments
+    `).get().total;
+
+    res.json({
+      totalProducts,
+      totalCustomers,
+      totalOrders,
+      totalSales
+    });
+
+  } catch (error) {
+    console.error("Dashboard error:", error);
+
+    res.status(500).json({
+      message: "Unable to load dashboard."
+    });
+  }
+});
+
+// =====================================
+// ADMIN REPORTS
+// =====================================
+
+app.get("/api/reports", verifyToken, verifyAdmin, (req, res) => {
+  try {
+
+    // TOTAL SALES
+    const totalSales = db.prepare(`
+      SELECT COALESCE(SUM(amount_paid), 0) AS total
+      FROM payments
+    `).get().total;
+
+    // TOTAL ORDERS
+    const totalOrders = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM orders
+    `).get().total;
+
+    // TOTAL CUSTOMERS
+    const totalCustomers = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM customers
+    `).get().total;
+
+    // TOTAL PRODUCTS
+    const totalProducts = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM products
+    `).get().total;
+
+    // MONTHLY SALES
+    const monthlySales = db.prepare(`
+      SELECT
+        strftime('%Y-%m', payment_date) AS month,
+        SUM(amount_paid) AS total_sales
+      FROM payments
+      WHERE payment_date IS NOT NULL
+      GROUP BY strftime('%Y-%m', payment_date)
+      ORDER BY month DESC
+      LIMIT 6
+    `).all().reverse();
+
+    // TOP SELLING PRODUCTS
+    const topProducts = db.prepare(`
+      SELECT
+        p.product_id,
+        p.product_name,
+        SUM(od.quantity) AS quantity_sold,
+        SUM(od.subtotal) AS total_sales
+      FROM order_details od
+      JOIN products p
+        ON od.product_id = p.product_id
+      GROUP BY p.product_id, p.product_name
+      ORDER BY quantity_sold DESC
+      LIMIT 5
+    `).all();
+
+    // RECENT ORDERS
+    const recentOrders = db.prepare(`
+      SELECT
+        o.order_id,
+        c.customer_name,
+        o.total_amount,
+        o.order_date,
+        o.status AS order_status
+      FROM orders o
+      LEFT JOIN customers c
+        ON o.customer_id = c.customer_id
+      ORDER BY o.order_id DESC
+      LIMIT 10
+    `).all();
+
+    res.json({
+      totalSales,
+      totalOrders,
+      totalCustomers,
+      totalProducts,
+      monthlySales,
+      topProducts,
+      recentOrders
+    });
+
+  } catch (error) {
+
+    console.error("Reports error:", error);
+
+    res.status(500).json({
+      message: "Unable to load reports."
+    });
+
+  }
+});
+
+// =====================================
+// ADMIN: USER MANAGEMENT
+// =====================================
+
+// GET ALL USERS
+app.get("/api/users", verifyToken, verifyAdmin, (req, res) => {
+  try {
+    const users = db.prepare(`
+      SELECT user_id, fullname, username, role, status
+      FROM users
+      WHERE role IN ('Admin', 'Staff')
+      ORDER BY user_id DESC
+    `).all();
+
+    res.json(users);
+
+  } catch (error) {
+    console.error("Get users error:", error);
+
+    res.status(500).json({
+      message: "Unable to load users."
+    });
+  }
+});
+
+
+// ADD USER
+app.post("/api/users", verifyToken, verifyAdmin, (req, res) => {
+  try {
+    const { fullname, username, password, role } = req.body;
+
+    if (
+      !fullname?.trim() ||
+      !username?.trim() ||
+      !password ||
+      !role
+    ) {
+      return res.status(400).json({
+        message: "Please complete all required fields."
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters."
+      });
+    }
+
+    if (!["Admin", "Staff"].includes(role)) {
+      return res.status(400).json({
+        message: "Invalid user role."
+      });
+    }
+
+    const existingUser = db.prepare(`
+      SELECT user_id
+      FROM users
+      WHERE username = ?
+    `).get(username.trim());
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "Username already exists."
+      });
+    }
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const result = db.prepare(`
+      INSERT INTO users
+      (fullname, username, password, role, status)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      fullname.trim(),
+      username.trim(),
+      hashedPassword,
+      role,
+      "Active"
+    );
+
+    res.status(201).json({
+      message: "User added successfully!",
+      user_id: result.lastInsertRowid
+    });
+
+  } catch (error) {
+    console.error("Add user error:", error);
+
+    res.status(500).json({
+      message: "Unable to add user."
+    });
+  }
+});
+
+
+// UPDATE USER
+app.put("/api/users/:id", verifyToken, verifyAdmin, (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const { fullname, username, password, role } = req.body;
+
+    if (
+      !fullname?.trim() ||
+      !username?.trim() ||
+      !role
+    ) {
+      return res.status(400).json({
+        message: "Please complete all required fields."
+      });
+    }
+
+    if (!["Admin", "Staff"].includes(role)) {
+      return res.status(400).json({
+        message: "Invalid user role."
+      });
+    }
+
+    if (password && password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters."
+      });
+    }
+
+    const existingUser = db.prepare(`
+      SELECT user_id
+      FROM users
+      WHERE user_id = ?
+    `).get(userId);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "User not found."
+      });
+    }
+
+    const duplicateUsername = db.prepare(`
+      SELECT user_id
+      FROM users
+      WHERE username = ?
+      AND user_id != ?
+    `).get(username.trim(), userId);
+
+    if (duplicateUsername) {
+      return res.status(409).json({
+        message: "Username already exists."
+      });
+    }
+
+    if (password) {
+      const hashedPassword = bcrypt.hashSync(password, 10);
+
+      db.prepare(`
+        UPDATE users
+        SET fullname = ?,
+            username = ?,
+            password = ?,
+            role = ?
+        WHERE user_id = ?
+      `).run(
+        fullname.trim(),
+        username.trim(),
+        hashedPassword,
+        role,
+        userId
+      );
+
+    } else {
+      db.prepare(`
+        UPDATE users
+        SET fullname = ?,
+            username = ?,
+            role = ?
+        WHERE user_id = ?
+      `).run(
+        fullname.trim(),
+        username.trim(),
+        role,
+        userId
+      );
+    }
+
+    res.json({
+      message: "User updated successfully!"
+    });
+
+  } catch (error) {
+    console.error("Update user error:", error);
+
+    res.status(500).json({
+      message: "Unable to update user."
+    });
+  }
+});
+
+
+// DELETE USER
+app.delete("/api/users/:id", verifyToken, verifyAdmin, (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+
+    // Prevent deleting your own account
+    if (userId === req.user.user_id) {
+      return res.status(400).json({
+        message: "You cannot delete your own account."
+      });
+    }
+
+    const user = db.prepare(`
+      SELECT user_id, role
+      FROM users
+      WHERE user_id = ?
+    `).get(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found."
+      });
+    }
+
+    // Prevent deleting the last Admin
+    if (user.role === "Admin") {
+      const adminCount = db.prepare(`
+        SELECT COUNT(*) AS total
+        FROM users
+        WHERE role = 'Admin'
+      `).get().total;
+
+      if (adminCount <= 1) {
+        return res.status(400).json({
+          message: "Cannot delete the last Admin account."
+        });
+      }
+    }
+
+    db.prepare(`
+      DELETE FROM users
+      WHERE user_id = ?
+    `).run(userId);
+
+    res.json({
+      message: "User deleted successfully!"
+    });
+
+  } catch (error) {
+    console.error("Delete user error:", error);
+
+    res.status(500).json({
+      message: "Unable to delete user."
+    });
+  }
+});
+
+// =====================================
+// CUSTOMER: GET AVAILABLE PRODUCTS
+// =====================================
+
+app.get(
+  "/api/customer/products",
+  verifyToken,
+  verifyCustomer,
+  (req, res) => {
+    try {
+      const products = db.prepare(`
+        SELECT
+          p.product_id,
+          p.product_name,
+          p.category_id,
+          c.category_name,
+          p.price,
+          p.stock
+        FROM products p
+        LEFT JOIN categories c
+          ON p.category_id = c.category_id
+        WHERE p.stock > 0
+        ORDER BY p.product_name ASC
+      `).all();
+
+      res.json(products);
+
+    } catch (error) {
+      console.error("Customer products error:", error);
+
+      res.status(500).json({
+        message: "Unable to load products."
+      });
+    }
+  }
+);
+
+// =====================================
+// CUSTOMER: GET OWN ORDERS
+// =====================================
+
+app.get(
+  "/api/customer/orders",
+  verifyToken,
+  verifyCustomer,
+  (req, res) => {
+    try {
+      const customer = db.prepare(`
+        SELECT customer_id
+        FROM customers
+        WHERE user_id = ?
+      `).get(req.user.user_id);
+
+      if (!customer) {
+        return res.status(404).json({
+          message: "Customer record not found."
+        });
+      }
+
+      const orders = db.prepare(`
+        SELECT
+          order_id,
+          order_date,
+          total_amount,
+          status
+        FROM orders
+        WHERE customer_id = ?
+        ORDER BY order_id DESC
+      `).all(customer.customer_id);
+
+      const getOrderItems = db.prepare(`
+        SELECT
+          od.product_id,
+          p.product_name,
+          od.quantity,
+          od.price,
+          od.subtotal
+        FROM order_details od
+        LEFT JOIN products p
+          ON od.product_id = p.product_id
+        WHERE od.order_id = ?
+      `);
+
+      const result = orders.map(order => ({
+        ...order,
+        items: getOrderItems.all(order.order_id)
+      }));
+
+      res.json(result);
+
+    } catch (error) {
+      console.error("Customer orders error:", error);
+
+      res.status(500).json({
+        message: "Unable to load your orders."
+      });
+    }
+  }
+);
+
+// =====================================
+// CUSTOMER: PLACE ORDER
+// =====================================
+
+app.post(
+  "/api/customer/orders",
+  verifyToken,
+  verifyCustomer,
+  (req, res) => {
+    try {
+      const { items } = req.body;
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({
+          message: "Your cart is empty."
+        });
+      }
+
+      const customer = db.prepare(`
+        SELECT customer_id
+        FROM customers
+        WHERE user_id = ?
+      `).get(req.user.user_id);
+
+      if (!customer) {
+        return res.status(404).json({
+          message: "Customer record not found."
+        });
+      }
+
+      const combinedItems = {};
+
+      for (const item of items) {
+        const productId = Number(item.product_id);
+        const quantity = Number(item.quantity);
+
+        if (
+          !Number.isInteger(productId) ||
+          productId <= 0 ||
+          !Number.isInteger(quantity) ||
+          quantity <= 0
+        ) {
+          return res.status(400).json({
+            message: "Invalid product or quantity."
+          });
+        }
+
+        combinedItems[productId] =
+          (combinedItems[productId] || 0) + quantity;
+      }
+
+      const orderItems = [];
+      let totalAmount = 0;
+
+      for (const productId of Object.keys(combinedItems)) {
+        const quantity = combinedItems[productId];
+
+        const product = db.prepare(`
+          SELECT product_id, product_name, price, stock
+          FROM products
+          WHERE product_id = ?
+        `).get(Number(productId));
+
+        if (!product) {
+          return res.status(404).json({
+            message: "A selected product was not found."
+          });
+        }
+
+        if (quantity > product.stock) {
+          return res.status(400).json({
+            message:
+              `Not enough stock for ${product.product_name}. Available stock: ${product.stock}.`
+          });
+        }
+
+        const subtotal = Number(product.price) * quantity;
+
+        totalAmount += subtotal;
 
         orderItems.push({
           product_id: product.product_id,
           quantity,
-          price: product.price,
+          price: Number(product.price),
           subtotal
         });
       }
 
-      if (Number(amount_paid) < total) {
-        throw new Error("Insufficient payment.");
-      }
+      const createOrder = db.transaction(() => {
 
-      const change = Number(amount_paid) - total;
+        const orderResult = db.prepare(`
+          INSERT INTO orders
+          (customer_id, total_amount, status)
+          VALUES (?, ?, ?)
+        `).run(
+          customer.customer_id,
+          totalAmount,
+          "Pending"
+        );
 
-      const orderResult = db.prepare(`
-        INSERT INTO orders (customer_id, total_amount, status)
-        VALUES (?, ?, 'Paid')
-      `).run(customer_id || null, total);
+        const orderId = Number(orderResult.lastInsertRowid);
 
-      const orderId = Number(orderResult.lastInsertRowid);
-
-      for (const item of orderItems) {
-        db.prepare(`
+        const insertOrderItem = db.prepare(`
           INSERT INTO order_details
           (order_id, product_id, quantity, price, subtotal)
           VALUES (?, ?, ?, ?, ?)
-        `).run(
-          orderId,
-          item.product_id,
-          item.quantity,
-          item.price,
-          item.subtotal
-        );
+        `);
 
-        db.prepare(`
-          UPDATE products
-          SET stock_quantity = stock_quantity - ?
-          WHERE product_id = ?
-        `).run(item.quantity, item.product_id);
+        for (const item of orderItems) {
+          insertOrderItem.run(
+            orderId,
+            item.product_id,
+            item.quantity,
+            item.price,
+            item.subtotal
+          );
+        }
 
-        db.prepare(`
-          INSERT INTO inventory
-          (product_id, movement_type, quantity)
-          VALUES (?, 'Stock Out', ?)
-        `).run(item.product_id, item.quantity);
+        return orderId;
+      });
+
+      const orderId = createOrder();
+
+      res.status(201).json({
+        message: "Order placed successfully!",
+        order_id: orderId,
+        total_amount: totalAmount,
+        status: "Pending"
+      });
+
+    } catch (error) {
+      console.error("Place order error:", error);
+
+      res.status(500).json({
+        message: "Unable to place your order."
+      });
+    }
+  }
+);
+
+ // =====================================
+ // ADMIN AND STAFF: GET ALL CUSTOMERS
+ // =====================================
+
+ app.get(
+  "/api/customers",
+  verifyToken,
+  verifyAdminOrStaff,
+  (req, res) => {
+    try {
+      const customers = db.prepare(`
+        SELECT
+          customer_id,
+          customer_name,
+          customer_name AS fullname,
+          customer_name AS customer_name_display,
+          contact_number,
+          contact_number AS contact,
+          address,
+          user_id
+        FROM customers
+        ORDER BY customer_id DESC
+      `).all();
+
+      res.json(customers);
+
+    } catch (error) {
+      console.error("Customers error:", error);
+
+      res.status(500).json({
+        message: "Unable to load customers."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: DELETE CUSTOMER
+// =====================================
+
+app.delete(
+  "/api/customers/:id",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const customerId = Number(req.params.id);
+
+      if (!Number.isInteger(customerId) || customerId <= 0) {
+        return res.status(400).json({
+          message: "Invalid customer ID."
+        });
       }
 
-      db.prepare(`
-        INSERT INTO payments (order_id, amount_paid, change_amount)
-        VALUES (?, ?, ?)
-      `).run(orderId, Number(amount_paid), change);
+      const customer = db.prepare(`
+        SELECT customer_id, user_id
+        FROM customers
+        WHERE customer_id = ?
+      `).get(customerId);
 
-      return { orderId, total, change };
-    });
+      if (!customer) {
+        return res.status(404).json({
+          message: "Customer not found."
+        });
+      }
 
-    const result = createOrder();
+      // CHECK IF CUSTOMER HAS EXISTING ORDERS
+      const hasOrders = db.prepare(`
+        SELECT order_id
+        FROM orders
+        WHERE customer_id = ?
+        LIMIT 1
+      `).get(customerId);
 
-    res.status(201).json({
-      message: "Order and payment completed successfully!",
-      ...result
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: error.message
-    });
+      if (hasOrders) {
+        return res.status(400).json({
+          message: "Cannot delete customer because they have existing order records."
+        });
+      }
+
+      // DELETE CUSTOMER AND LINKED ACCOUNT
+      const deleteCustomer = db.transaction(() => {
+
+        db.prepare(`
+          DELETE FROM customers
+          WHERE customer_id = ?
+        `).run(customerId);
+
+        if (customer.user_id) {
+          db.prepare(`
+            DELETE FROM users
+            WHERE user_id = ?
+              AND role = 'Customer'
+          `).run(customer.user_id);
+        }
+
+      });
+
+      deleteCustomer();
+
+      res.json({
+        message: "Customer deleted successfully!"
+      });
+
+    } catch (error) {
+      console.error("Delete customer error:", error);
+
+      res.status(500).json({
+        message: "Unable to delete customer."
+      });
+    }
   }
-});
+);
 
-// PAYMENTS
-app.get("/api/payments", (req, res) => {
-  const payments = db.prepare(`
-    SELECT payments.*, orders.total_amount
-    FROM payments
-    JOIN orders ON payments.order_id = orders.order_id
-    ORDER BY payments.payment_id DESC
-  `).all();
+ // =====================================
+ // ADMIN AND STAFF: GET ALL PRODUCTS
+ // =====================================
 
-  res.json(payments);
-});
+ app.get(
+  "/api/products",
+  verifyToken,
+  (req, res) => {
+    try {
 
-// INVENTORY
-app.get("/api/inventory", (req, res) => {
-  const inventory = db.prepare(`
-    SELECT inventory.*, products.product_name
-    FROM inventory
-    JOIN products ON inventory.product_id = products.product_id
-    ORDER BY inventory.inventory_id DESC
-  `).all();
+      // ALLOW ADMIN AND STAFF TO VIEW PRODUCTS
+      if (
+        req.user.role !== "Admin" &&
+        req.user.role !== "Staff"
+      ) {
+        return res.status(403).json({
+          message: "Admin and Staff access only."
+        });
+      }
 
-  res.json(inventory);
-});
+      const products = db.prepare(`
+        SELECT
+          p.product_id,
+          p.product_name,
+          p.category_id,
+          c.category_name,
+          p.price,
+          p.stock,
+          p.stock AS stock_quantity
+        FROM products p
+        LEFT JOIN categories c
+          ON p.category_id = c.category_id
+        ORDER BY p.product_id DESC
+      `).all();
 
-app.post("/api/inventory", (req, res) => {
-  const { product_id, movement_type, quantity } = req.body;
-  const amount = Number(quantity);
+      res.json(products);
 
-  if (!product_id ||
-      !["Stock In", "Stock Out"].includes(movement_type) ||
-      !Number.isInteger(amount) || amount <= 0) {
-    return res.status(400).json({
-      message: "Please enter valid inventory information."
-    });
+    } catch (error) {
+      console.error("Products error:", error);
+
+      res.status(500).json({
+        message: "Unable to load products."
+      });
+    }
   }
+);
 
-  try {
-    const updateStock = db.transaction(() => {
-      const product = db.prepare(
-        "SELECT * FROM products WHERE product_id = ?"
-      ).get(product_id);
+
+
+// =====================================
+// ADMIN: UPDATE INVENTORY
+// =====================================
+
+app.post(
+  "/api/inventory",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const {
+        product_id,
+        quantity,
+        movement_type,
+        remarks
+      } = req.body;
+
+      const productId = Number(product_id);
+      const qty = Number(quantity);
+
+      if (
+        !Number.isInteger(productId) ||
+        productId <= 0 ||
+        !Number.isInteger(qty) ||
+        qty <= 0
+      ) {
+        return res.status(400).json({
+          message: "Please enter a valid product and quantity."
+        });
+      }
+
+      if (
+        movement_type !== "Stock In" &&
+        movement_type !== "Stock Out"
+      ) {
+        return res.status(400).json({
+          message: "Invalid inventory movement type."
+        });
+      }
+
+      const product = db.prepare(`
+        SELECT product_id, product_name, stock
+        FROM products
+        WHERE product_id = ?
+      `).get(productId);
 
       if (!product) {
-        throw new Error("Product not found.");
+        return res.status(404).json({
+          message: "Product not found."
+        });
       }
 
-      if (movement_type === "Stock Out" &&
-          product.stock_quantity < amount) {
-        throw new Error("Not enough available stock.");
+      if (
+        movement_type === "Stock Out" &&
+        qty > product.stock
+      ) {
+        return res.status(400).json({
+          message: "Not enough stock available."
+        });
       }
 
-      const adjustment = movement_type === "Stock In"
-        ? amount
-        : -amount;
+      const updateInventory = db.transaction(() => {
 
-      db.prepare(`
-        UPDATE products
-        SET stock_quantity = stock_quantity + ?
-        WHERE product_id = ?
-      `).run(adjustment, product_id);
+        if (movement_type === "Stock In") {
+          db.prepare(`
+            UPDATE products
+            SET stock = stock + ?
+            WHERE product_id = ?
+          `).run(qty, productId);
+        } else {
+          db.prepare(`
+            UPDATE products
+            SET stock = stock - ?
+            WHERE product_id = ?
+          `).run(qty, productId);
+        }
 
-      db.prepare(`
-        INSERT INTO inventory (product_id, movement_type, quantity)
-        VALUES (?, ?, ?)
-      `).run(product_id, movement_type, amount);
-    });
+        db.prepare(`
+          INSERT INTO inventory (
+            product_id,
+            quantity,
+            movement_type,
+            remarks
+          )
+          VALUES (?, ?, ?, ?)
+        `).run(
+          productId,
+          qty,
+          movement_type === "Stock In" ? "IN" : "OUT",
+          remarks || ""
+        );
 
-    updateStock();
+      });
 
-    res.json({
-      message: "Inventory updated successfully!"
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: error.message
-    });
+      updateInventory();
+
+      res.json({
+        message: "Inventory updated successfully!"
+      });
+
+    } catch (error) {
+      console.error("Update inventory error:", error);
+
+      res.status(500).json({
+        message: "Failed to update inventory."
+      });
+    }
   }
-});
+);
 
-// REPORTS
-app.get("/api/reports", (req, res) => {
-  const summary = db.prepare(`
-    SELECT
-      COUNT(*) AS totalOrders,
-      COALESCE(SUM(total_amount), 0) AS totalSales
-    FROM orders
-    WHERE status = 'Paid'
-  `).get();
+ // =====================================
+ // ADMIN AND STAFF: GET ALL ORDERS
+ // =====================================
 
-  const sales = db.prepare(`
-    SELECT orders.*, customers.customer_name
-    FROM orders
-    LEFT JOIN customers
-    ON orders.customer_id = customers.customer_id
-    ORDER BY orders.order_id DESC
-  `).all();
+ app.get(
+  "/api/orders",
+  verifyToken,
+  verifyAdminOrStaff,
+  (req, res) => {
+    try {
+      const orders = db.prepare(`
+        SELECT
+          o.order_id,
+          o.customer_id,
+          c.customer_name AS customer_name,
+          o.order_date,
+          o.total_amount,
+          o.status,
+          o.status AS order_status
+        FROM orders o
+        LEFT JOIN customers c
+          ON o.customer_id = c.customer_id
+        ORDER BY o.order_id DESC
+      `).all();
 
-  res.json({
-    summary,
-    sales
-  });
-});
+      res.json(orders);
 
-// USERS
-app.get("/api/users", (req, res) => {
-  const users = db.prepare(`
-    SELECT user_id, fullname, username, role, status
-    FROM users
-    ORDER BY user_id DESC
-  `).all();
+    } catch (error) {
+      console.error("Orders error:", error);
 
-  res.json(users);
-});
-
-// Update user role and status
-app.put("/api/users/:id", (req, res) => {
-  const { role, status } = req.body;
-
-  if (!["Admin", "Staff"].includes(role) ||
-      !["Active", "Inactive"].includes(status)) {
-    return res.status(400).json({
-      message: "Invalid role or status."
-    });
+      res.status(500).json({
+        message: "Unable to load orders."
+      });
+    }
   }
+);
 
-  const result = db.prepare(`
-    UPDATE users
-    SET role = ?, status = ?
-    WHERE user_id = ?
-  `).run(role, status, req.params.id);
+// =====================================
+// ADMIN: CREATE ORDER WITH PAYMENT
+// =====================================
 
-  res.json({
-    message: result.changes
-      ? "User updated successfully!"
-      : "User not found."
-  });
-});
+app.post(
+  "/api/orders",
+  verifyToken,
+  verifyAdminOrStaff,
+  (req, res) => {
+    try {
+      const { customer_id, items, amount_paid } = req.body;
 
-// Start server
+      const customerId = Number(customer_id);
+      const paymentAmount = Number(amount_paid);
+
+      if (!Number.isInteger(customerId) || customerId <= 0) {
+        return res.status(400).json({
+          message: "Please select a valid customer."
+        });
+      }
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({
+          message: "Please add products to your cart."
+        });
+      }
+
+      if (!Number.isFinite(paymentAmount) || paymentAmount < 0) {
+        return res.status(400).json({
+          message: "Invalid payment amount."
+        });
+      }
+
+      const customer = db.prepare(`
+        SELECT customer_id
+        FROM customers
+        WHERE customer_id = ?
+      `).get(customerId);
+
+      if (!customer) {
+        return res.status(404).json({
+          message: "Customer not found."
+        });
+      }
+
+      const combinedItems = {};
+
+      for (const item of items) {
+        const productId = Number(item.product_id);
+        const itemQuantity = Number(item.quantity);
+
+        if (
+          !Number.isInteger(productId) ||
+          productId <= 0 ||
+          !Number.isInteger(itemQuantity) ||
+          itemQuantity <= 0
+        ) {
+          return res.status(400).json({
+            message: "Invalid product or quantity."
+          });
+        }
+
+        combinedItems[productId] =
+          (combinedItems[productId] || 0) + itemQuantity;
+      }
+
+      const orderItems = [];
+      let totalAmount = 0;
+
+      for (const productId of Object.keys(combinedItems)) {
+        const itemQuantity = combinedItems[productId];
+
+        const product = db.prepare(`
+          SELECT product_id, product_name, price, stock
+          FROM products
+          WHERE product_id = ?
+        `).get(Number(productId));
+
+        if (!product) {
+          return res.status(404).json({
+            message: "A selected product was not found."
+          });
+        }
+
+        if (itemQuantity > product.stock) {
+          return res.status(400).json({
+            message:
+              `Not enough stock for ${product.product_name}. Available stock: ${product.stock}.`
+          });
+        }
+
+        const subtotal = Number(product.price) * itemQuantity;
+
+        totalAmount += subtotal;
+
+        orderItems.push({
+          product_id: product.product_id,
+          quantity: itemQuantity,
+          price: Number(product.price),
+          subtotal
+        });
+      }
+
+      if (paymentAmount < totalAmount) {
+        return res.status(400).json({
+          message: "Payment is not enough."
+        });
+      }
+
+      const createOrder = db.transaction(() => {
+
+        const orderResult = db.prepare(`
+          INSERT INTO orders
+          (customer_id, total_amount, status)
+          VALUES (?, ?, ?)
+        `).run(
+          customerId,
+          totalAmount,
+          "Paid"
+        );
+
+        const orderId = Number(orderResult.lastInsertRowid);
+
+        const insertOrderItem = db.prepare(`
+          INSERT INTO order_details
+          (order_id, product_id, quantity, price, subtotal)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+
+        const updateStock = db.prepare(`
+          UPDATE products
+          SET stock = stock - ?
+          WHERE product_id = ?
+            AND stock >= ?
+        `);
+
+        const insertInventory = db.prepare(`
+          INSERT INTO inventory
+          (product_id, quantity, movement_type)
+          VALUES (?, ?, 'OUT')
+        `);
+
+        for (const item of orderItems) {
+          insertOrderItem.run(
+            orderId,
+            item.product_id,
+            item.quantity,
+            item.price,
+            item.subtotal
+          );
+
+          const stockResult = updateStock.run(
+            item.quantity,
+            item.product_id,
+            item.quantity
+          );
+
+          if (stockResult.changes === 0) {
+            throw new Error(
+              "Product stock changed. Please refresh and try again."
+            );
+          }
+
+          insertInventory.run(
+            item.product_id,
+            item.quantity
+          );
+        }
+
+        const changeAmount = paymentAmount - totalAmount;
+
+        db.prepare(`
+          INSERT INTO payments
+          (order_id, amount_paid, change_amount, payment_method)
+          VALUES (?, ?, ?, ?)
+        `).run(
+          orderId,
+          totalAmount,
+          changeAmount,
+          "Cash"
+        );
+
+        return orderId;
+      });
+
+      const orderId = createOrder();
+
+      res.status(201).json({
+        message: "Order successfully processed!",
+        order_id: orderId,
+        total_amount: totalAmount,
+        amount_paid: totalAmount,
+        change: paymentAmount - totalAmount,
+        status: "Paid"
+      });
+
+    } catch (error) {
+      console.error("Create order error:", error);
+
+      res.status(500).json({
+        message: error.message || "Failed to process order."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: GET ALL PAYMENT RECORDS
+// =====================================
+
+app.get(
+    "/api/payments",
+    verifyToken,
+    verifyAdminOrStaff,
+  (req, res) => {
+    try {
+      const payments = db.prepare(`
+        SELECT
+          p.payment_id,
+          p.order_id,
+          c.customer_name AS customer_name,
+          p.amount_paid,
+          p.change_amount,
+          p.payment_method,
+          p.payment_date
+        FROM payments p
+        LEFT JOIN orders o
+          ON p.order_id = o.order_id
+        LEFT JOIN customers c
+          ON o.customer_id = c.customer_id
+        ORDER BY p.payment_id DESC
+      `).all();
+
+      res.json(payments);
+
+    } catch (error) {
+      console.error("Load payments error:", error);
+
+      res.status(500).json({
+        message: "Unable to load payment records."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: GET UNPAID ORDERS
+// =====================================
+
+app.get(
+  "/api/payments/orders",
+  verifyToken,
+  verifyAdminOrStaff,
+  (req, res) => {
+    try {
+      const orders = db.prepare(`
+        SELECT
+          o.order_id,
+          o.customer_id,
+          c.customer_name AS customer_name,
+          o.order_date,
+          o.total_amount,
+          o.status,
+          COALESCE(
+            (
+              SELECT SUM(p.amount_paid)
+              FROM payments p
+              WHERE p.order_id = o.order_id
+            ),
+            0
+          ) AS amount_paid_so_far
+        FROM orders o
+        LEFT JOIN customers c
+          ON o.customer_id = c.customer_id
+        WHERE o.status = 'Pending'
+        ORDER BY o.order_id DESC
+      `).all();
+
+      res.json(orders);
+
+    } catch (error) {
+      console.error("Load unpaid orders error:", error);
+
+      res.status(500).json({
+        message: "Unable to load unpaid orders."
+      });
+    }
+  }
+);
+
+// =====================================
+// ADMIN: RECORD PAYMENT
+// =====================================
+
+app.post(
+  "/api/payments",
+  verifyToken,
+  verifyAdminOrStaff,
+  (req, res) => {
+    try {
+      const { order_id, amount_paid, payment_method } = req.body;
+
+      const orderId = Number(order_id);
+      const tenderedAmount = Number(amount_paid);
+
+      if (!Number.isInteger(orderId) || orderId <= 0) {
+        return res.status(400).json({
+          message: "Please select a valid order."
+        });
+      }
+
+      if (
+        !Number.isFinite(tenderedAmount) ||
+        tenderedAmount <= 0
+      ) {
+        return res.status(400).json({
+          message: "Please enter a valid payment amount."
+        });
+      }
+
+      const allowedMethods = [
+        "Cash",
+        "GCash",
+        "Bank Transfer"
+      ];
+
+      if (!allowedMethods.includes(payment_method)) {
+        return res.status(400).json({
+          message: "Invalid payment method."
+        });
+      }
+
+      const processPayment = db.transaction(() => {
+
+        const order = db.prepare(`
+          SELECT order_id, total_amount, status
+          FROM orders
+          WHERE order_id = ?
+        `).get(orderId);
+
+        if (!order) {
+          throw new Error("Order not found.");
+        }
+
+        if (order.status !== "Pending") {
+          throw new Error(
+            "This order has already been paid or processed."
+          );
+        }
+
+        const previousPayments = db.prepare(`
+          SELECT COALESCE(SUM(amount_paid), 0) AS total_paid
+          FROM payments
+          WHERE order_id = ?
+        `).get(orderId);
+
+        const totalPaid = Number(previousPayments.total_paid);
+
+        const remainingBalance =
+          Number(order.total_amount) - totalPaid;
+
+        if (remainingBalance <= 0) {
+          throw new Error(
+            "This order has already been fully paid."
+          );
+        }
+
+        if (tenderedAmount < remainingBalance) {
+          throw new Error(
+            "Payment must cover the remaining balance of ₱" +
+            remainingBalance.toFixed(2) + "."
+          );
+        }
+
+        const changeAmount =
+          tenderedAmount - remainingBalance;
+
+        const items = db.prepare(`
+          SELECT product_id, quantity, price
+          FROM order_details
+          WHERE order_id = ?
+        `).all(orderId);
+
+        if (items.length === 0) {
+          throw new Error("This order has no products.");
+        }
+
+        for (const item of items) {
+          const product = db.prepare(`
+            SELECT product_name, stock
+            FROM products
+            WHERE product_id = ?
+          `).get(item.product_id);
+
+          if (!product) {
+            throw new Error(
+              "A product in this order no longer exists."
+            );
+          }
+
+          if (Number(item.quantity) > Number(product.stock)) {
+            throw new Error(
+              `Not enough stock for ${product.product_name}. Available stock: ${product.stock}.`
+            );
+          }
+        }
+
+        db.prepare(`
+          INSERT INTO payments
+          (
+            order_id,
+            amount_paid,
+            change_amount,
+            payment_method
+          )
+          VALUES (?, ?, ?, ?)
+        `).run(
+          orderId,
+          remainingBalance,
+          changeAmount,
+          payment_method
+        );
+
+        const updateStock = db.prepare(`
+          UPDATE products
+          SET stock = stock - ?
+          WHERE product_id = ?
+            AND stock >= ?
+        `);
+
+        const insertInventory = db.prepare(`
+          INSERT INTO inventory
+          (product_id, quantity, movement_type)
+          VALUES (?, ?, 'OUT')
+        `);
+
+        for (const item of items) {
+          const result = updateStock.run(
+            item.quantity,
+            item.product_id,
+            item.quantity
+          );
+
+          if (result.changes === 0) {
+            throw new Error(
+              "Stock changed while processing. Please try again."
+            );
+          }
+
+          insertInventory.run(
+            item.product_id,
+            item.quantity
+          );
+        }
+
+        db.prepare(`
+          UPDATE orders
+          SET status = 'Paid'
+          WHERE order_id = ?
+            AND status = 'Pending'
+        `).run(orderId);
+
+        return {
+          remainingBalance,
+          changeAmount
+        };
+      });
+
+      const result = processPayment();
+
+      res.json({
+        message: "Payment recorded successfully!",
+        order_id: orderId,
+        amount_paid: result.remainingBalance,
+        change_amount: result.changeAmount,
+        status: "Paid"
+      });
+
+    } catch (error) {
+      console.error("Record payment error:", error);
+
+      res.status(400).json({
+        message: error.message || "Unable to record payment."
+      });
+    }
+  }
+);
+
+// =====================================
+// START SERVER
+// =====================================
+
+const PORT = 5000;
+
 app.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
+  console.log(
+    `Server is running at http://localhost:${PORT}`
+  );
 });
