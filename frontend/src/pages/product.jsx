@@ -1,25 +1,25 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-
 // PRODUCT IMAGES
 const productImages = {
   "Lip Tint": "/images/products/lip-tint.jpg",
   "Lip Gloss": "/images/products/lip-gloss.jpg",
-  "Mini Shoulder Bag": "/images/products/mini-bag.jpg",
+  "Mini Shoulder Bag": "/images/products/mini_shoulder_bag.jpg",
   "Tote Bag": "/images/products/tote-bag.jpg",
   "Ribbon Hairclip": "/images/products/ribbon-hairclip.jpg",
   "Pearl Hairclip": "/images/products/pearl-hairclip.jpg",
-  "Casual Crop Top": "/images/products/crop-top.jpg",
-  "Basic T-Shirt": "/images/products/tshirt.jpg",
+  "Casual Crop Top": "/images/products/casual_croptop.jpg",
+  "Basic T-Shirt": "/images/products/basic-tshirt.jpg",
   "Denim Jacket": "/images/products/denim-jacket.jpg",
   "Casual Jacket": "/images/products/casual-jacket.jpg",
-  "Wide Leg Pants": "/images/products/wide-leg-pants.jpg",
+  "Wide Leg Pants": "/images/products/wide_leg_pants.jpg",
   "Cargo Pants": "/images/products/cargo-pants.jpg",
   "Blush On": "/images/products/blush-on.jpg",
   "Face Powder": "/images/products/face-powder.jpg",
   "Flat Sandals": "/images/products/flat-sandals.jpg",
-  "Casual Sandals": "/images/products/casual-sandals.jpg"
+  "Casual Sandals": "/images/products/casual-sandals.jpg",
+  "jmcy": "/images/products/jmcy.jpg"
 };
 
 const getProductImage = (productName) => {

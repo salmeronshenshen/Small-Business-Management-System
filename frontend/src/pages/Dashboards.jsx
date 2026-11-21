@@ -5,7 +5,9 @@ import { useNavigate, Link } from "react-router-dom";
 function Dashboard() {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState({});
+  const [user, setUser] = useState(() => {
+    return JSON.parse(localStorage.getItem("user") || "{}");
+  });
   const [stats, setStats] = useState({
     totalProducts: 0,
     totalCustomers: 0,
@@ -19,11 +21,6 @@ function Dashboard() {
   const isStaff = user.role === "Staff";
 
   useEffect(() => {
-    const savedUser = JSON.parse(
-      localStorage.getItem("user") || "{}"
-    );
-
-    setUser(savedUser);
     fetchDashboard();
   }, []);
 
