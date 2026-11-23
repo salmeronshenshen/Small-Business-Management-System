@@ -117,6 +117,21 @@ module.exports = (database) => {
     try {
       const { id } = req.params;
 
+      // CHECK IF CUSTOMER HAS ORDERS
+      const existingOrders = database.prepare(`
+        SELECT COUNT(*) AS total
+        FROM orders
+        WHERE customer_id = ?
+      `).get(id);
+
+      // PREVENT DELETING CUSTOMER WITH ORDERS
+      if (existingOrders.total > 0) {
+        return res.status(400).json({
+          message: "Cannot delete this customer because they have existing orders."
+        });
+      }
+
+      // DELETE CUSTOMER IF NO ORDERS
       const result = database.prepare(`
         DELETE FROM customers
         WHERE customer_id = ?
@@ -132,8 +147,10 @@ module.exports = (database) => {
         message: "Customer deleted successfully!"
       });
     } catch (error) {
+      console.error(error);
+
       res.status(500).json({
-        message: "Unable to delete customer. This customer may already have orders."
+        message: "Unable to delete customer."
       });
     }
   });
