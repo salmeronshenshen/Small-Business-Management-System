@@ -2052,6 +2052,49 @@ app.delete(
 );
 
 
+ // =====================================
+ // ADMIN: GET INVENTORY HISTORY
+ // =====================================
+
+ app.get(
+  "/api/inventory",
+  verifyToken,
+  verifyAdmin,
+  (req, res) => {
+    try {
+      const inventory = db.prepare(`
+        SELECT
+          i.inventory_id,
+          i.product_id,
+          p.product_name,
+          i.quantity,
+          CASE
+            WHEN UPPER(i.movement_type) = 'IN'
+              OR i.movement_type = 'Stock In'
+            THEN 'Stock In'
+            ELSE 'Stock Out'
+          END AS movement_type,
+          i.movement_date,
+          i.remarks
+        FROM inventory i
+        LEFT JOIN products p
+          ON i.product_id = p.product_id
+        ORDER BY i.inventory_id DESC
+      `).all();
+
+      res.json(inventory);
+
+    } catch (error) {
+      console.error("Load inventory error:", error);
+
+      res.status(500).json({
+        message: "Unable to load inventory records.",
+        error: error.message
+      });
+    }
+  }
+);
+
 
 // =====================================
 // ADMIN: UPDATE INVENTORY
