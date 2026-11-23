@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -27,25 +26,59 @@ function Inventory() {
   // LOAD PRODUCTS AND INVENTORY
   const loadData = async () => {
     try {
-      const [productRes, inventoryRes] = await Promise.all([
-        fetch("http://localhost:5000/api/products", { headers }),
-        fetch("http://localhost:5000/api/inventory", { headers })
-      ]);
+      // LOAD PRODUCTS
+      const productRes = await fetch(
+        "http://localhost:5000/api/products",
+        { headers }
+      );
 
-      if (!productRes.ok || !inventoryRes.ok) {
-        throw new Error("Failed to load inventory information.");
+      if (!productRes.ok) {
+        throw new Error("Failed to load products.");
       }
 
       const productData = await productRes.json();
+
+      setProducts(
+        Array.isArray(productData)
+          ? productData
+          : Array.isArray(productData.products)
+          ? productData.products
+          : []
+      );
+
+    } catch (error) {
+      console.error("Products Error:", error);
+      setMessage(error.message);
+    }
+
+    try {
+      // LOAD INVENTORY
+      const inventoryRes = await fetch(
+        "http://localhost:5000/api/inventory",
+        { headers }
+      );
+
+      if (!inventoryRes.ok) {
+        throw new Error("Failed to load inventory records.");
+      }
+
       const inventoryData = await inventoryRes.json();
 
-      setProducts(productData);
-      setInventory(inventoryData);
+      setInventory(
+        Array.isArray(inventoryData)
+          ? inventoryData
+          : Array.isArray(inventoryData.inventory)
+          ? inventoryData.inventory
+          : []
+      );
+
     } catch (error) {
+      console.error("Inventory Error:", error);
       setMessage(error.message);
     }
   };
 
+  // LOAD DATA
   useEffect(() => {
     loadData();
   }, []);
@@ -57,15 +90,24 @@ function Inventory() {
     navigate("/");
   };
 
-  // STOCK SUMMARY
+  // TOTAL STOCK
   const totalStock = products.reduce(
-    (total, product) => total + Number(product.stock_quantity || 0),
+    (total, product) =>
+      total + Number(product.stock_quantity || 0),
     0
   );
 
+  // LOW STOCK
   const lowStock = products.filter(
-    (product) => Number(product.stock_quantity) <= 10
+    (product) =>
+      Number(product.stock_quantity || 0) <= 10
   ).length;
+
+  // SELECTED PRODUCT
+  const selectedProduct = products.find(
+    (product) =>
+      Number(product.product_id) === Number(productId)
+  );
 
   // RECORD STOCK MOVEMENT
   const handleSubmit = async (e) => {
@@ -77,8 +119,21 @@ function Inventory() {
       return;
     }
 
-    if (!Number.isInteger(Number(quantity)) || Number(quantity) < 1) {
+    if (
+      !Number.isInteger(Number(quantity)) ||
+      Number(quantity) < 1
+    ) {
       setMessage("Please enter a valid quantity.");
+      return;
+    }
+
+    // CHECK STOCK FOR STOCK OUT
+    if (
+      movementType === "Stock Out" &&
+      Number(quantity) >
+        Number(selectedProduct?.stock_quantity || 0)
+    ) {
+      setMessage("Not enough stock available.");
       return;
     }
 
@@ -92,7 +147,7 @@ function Inventory() {
             product_id: Number(productId),
             quantity: Number(quantity),
             movement_type: movementType,
-            remarks
+            remarks: remarks
           })
         }
       );
@@ -100,10 +155,14 @@ function Inventory() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to update inventory.");
+        throw new Error(
+          data.message || "Failed to update inventory."
+        );
       }
 
-      setMessage(data.message || "Inventory updated successfully!");
+      setMessage(
+        data.message || "Inventory updated successfully!"
+      );
 
       setProductId("");
       setQuantity(1);
@@ -111,6 +170,7 @@ function Inventory() {
       setRemarks("");
 
       await loadData();
+
     } catch (error) {
       setMessage(error.message);
     }
@@ -120,10 +180,12 @@ function Inventory() {
   const filteredInventory = inventory.filter((item) => {
     const productName = item.product_name || "";
     const movement = item.movement_type || "";
+    const remarksText = item.remarks || "";
 
     return (
       productName.toLowerCase().includes(search.toLowerCase()) ||
       movement.toLowerCase().includes(search.toLowerCase()) ||
+      remarksText.toLowerCase().includes(search.toLowerCase()) ||
       String(item.inventory_id).includes(search)
     );
   });
@@ -137,17 +199,36 @@ function Inventory() {
 
         <nav>
           <Link to="/dashboard">🏠 Dashboard</Link>
+
           <Link to="/products">📦 Products</Link>
-          <Link to="/categories">🏷️ Categories</Link>
-          <Link to="/customers">👥 Customers</Link>
-          <Link to="/orders">🛒 Orders</Link>
+
+          {user.role === "Admin" && (
+            <>
+              <Link to="/categories">🏷️ Categories</Link>
+              <Link to="/customers">👥 Customers</Link>
+            </>
+          )}
+
+          <Link to="/orders">📋 Orders</Link>
+
           <Link to="/payments">💳 Payments</Link>
-          <Link to="/inventory" className="active">📥 Inventory</Link>
-          <Link to="/reports">📊 Reports</Link>
-          <Link to="/users">👤 Users</Link>
+
+          {user.role === "Admin" && (
+            <>
+              <Link to="/inventory" className="active">
+                📥 Inventory
+              </Link>
+
+              <Link to="/reports">📊 Reports</Link>
+              <Link to="/users">👤 Users</Link>
+            </>
+          )}
         </nav>
 
-        <button className="logout-button" onClick={handleLogout}>
+        <button
+          className="logout-button"
+          onClick={handleLogout}
+        >
           Logout
         </button>
       </aside>
@@ -159,14 +240,19 @@ function Inventory() {
         <header className="dashboard-header">
           <div>
             <h1>Inventory</h1>
-            <p>Monitor product stocks and inventory movements.</p>
+            <p>
+              Monitor product stocks and inventory movements.
+            </p>
           </div>
 
           <div className="admin-info">
-            <span>👑</span>
+            <span>
+              {user.role === "Admin" ? "👑" : "👤"}
+            </span>
+
             <div>
-              <strong>{user.fullname || "Administrator"}</strong>
-              <small>Administrator</small>
+              <strong>{user.fullname || "User"}</strong>
+              <small>{user.role || "Account"}</small>
             </div>
           </div>
         </header>
@@ -175,9 +261,10 @@ function Inventory() {
         <section className="dashboard-welcome">
           <div>
             <h2>Inventory Management! 💗</h2>
+
             <p>
-              Keep track of your product stocks, record stock movements,
-              and monitor your available inventory.
+              Keep track of your product stocks, record stock
+              movements, and monitor your available inventory.
             </p>
           </div>
 
@@ -229,8 +316,12 @@ function Inventory() {
             </div>
           )}
 
-          <form className="module-form" onSubmit={handleSubmit}>
+          <form
+            className="module-form"
+            onSubmit={handleSubmit}
+          >
 
+            {/* PRODUCT */}
             <div className="form-field">
               <label>Select Product</label>
 
@@ -246,14 +337,14 @@ function Inventory() {
                     key={product.product_id}
                     value={product.product_id}
                   >
-                    {product.product_name}
-                    {" - Current Stock: "}
+                    {product.product_name} - Current Stock:{" "}
                     {product.stock_quantity}
                   </option>
                 ))}
               </select>
             </div>
 
+            {/* MOVEMENT TYPE */}
             <div className="form-field">
               <label>Movement Type</label>
 
@@ -266,6 +357,7 @@ function Inventory() {
               </select>
             </div>
 
+            {/* QUANTITY */}
             <div className="form-field">
               <label>Quantity</label>
 
@@ -279,6 +371,7 @@ function Inventory() {
               />
             </div>
 
+            {/* REMARKS */}
             <div className="form-field">
               <label>Remarks</label>
 
@@ -291,7 +384,10 @@ function Inventory() {
             </div>
 
             <div className="form-actions">
-              <button type="submit" className="pink-button">
+              <button
+                type="submit"
+                className="pink-button"
+              >
                 ✓ Save Inventory Movement
               </button>
             </div>
@@ -326,10 +422,13 @@ function Inventory() {
                   products.map((product) => (
                     <tr key={product.product_id}>
                       <td>#{product.product_id}</td>
+
                       <td>{product.product_name}</td>
+
                       <td>{product.stock_quantity}</td>
+
                       <td>
-                        {Number(product.stock_quantity) <= 10 ? (
+                        {Number(product.stock_quantity || 0) <= 10 ? (
                           <span className="inventory-status-low">
                             Low Stock
                           </span>
@@ -343,7 +442,10 @@ function Inventory() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="4">
+                    <td
+                      colSpan="4"
+                      style={{ textAlign: "center" }}
+                    >
                       No products available.
                     </td>
                   </tr>
@@ -392,8 +494,11 @@ function Inventory() {
                   filteredInventory.map((item) => (
                     <tr key={item.inventory_id}>
                       <td>#{item.inventory_id}</td>
+
                       <td>{item.product_name}</td>
+
                       <td>{item.quantity}</td>
+
                       <td>
                         {item.movement_type === "Stock In" ? (
                           <span className="inventory-status-available">
@@ -405,13 +510,18 @@ function Inventory() {
                           </span>
                         )}
                       </td>
+
                       <td>{item.movement_date}</td>
+
                       <td>{item.remarks || "—"}</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6">
+                    <td
+                      colSpan="6"
+                      style={{ textAlign: "center" }}
+                    >
                       No inventory records found.
                     </td>
                   </tr>
