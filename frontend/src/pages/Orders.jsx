@@ -205,93 +205,6 @@ function Orders() {
 
         </section>
 
-        {/* ORDER HISTORY */}
-        <section className="module-card">
-
-          <div className="table-heading">
-            <div>
-              <h2>📋 Order History</h2>
-              <p>
-                View and search all recorded customer orders.
-              </p>
-            </div>
-
-            <input
-              className="search-input"
-              type="text"
-              placeholder="Search order ID, customer, or status..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <div className="table-wrapper">
-            <table className="data-table">
-
-              <thead>
-                <tr>
-                  <th>Order ID</th>
-                  <th>Customer</th>
-                  <th>Total Amount</th>
-                  <th>Order Date</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filteredOrders.length > 0 ? (
-                  filteredOrders.map((order) => {
-                    const status =
-                      order.order_status || order.status || "Pending";
-
-                    const isCompleted =
-                      status.toLowerCase() === "paid" ||
-                      status.toLowerCase() === "completed";
-
-                    return (
-                      <tr key={order.order_id}>
-                        <td>#{order.order_id}</td>
-
-                        <td>
-                          {order.customer_name ||
-                            order.fullname ||
-                            "Unknown Customer"}
-                        </td>
-
-                        <td>
-                          ₱{Number(order.total_amount || 0).toFixed(2)}
-                        </td>
-
-                        <td>{order.order_date}</td>
-
-                        <td>
-                          <span
-                            className={`orders-status ${
-                              isCompleted
-                                ? "orders-status-completed"
-                                : "orders-status-pending"
-                            }`}
-                          >
-                            {status}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan="5" style={{ textAlign: "center" }}>
-                      No orders found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-
-            </table>
-          </div>
-
-        </section>
-
         {/* PAYMENT DETAILS */}
         <section className="module-card">
 
@@ -377,6 +290,93 @@ function Orders() {
               Please select an order to view payment details.
             </p>
           )}
+
+        </section>
+
+        {/* ORDER HISTORY */}
+        <section className="module-card">
+
+          <div className="table-heading">
+            <div>
+              <h2>📋 Order History</h2>
+              <p>
+                View and search all recorded customer orders.
+              </p>
+            </div>
+
+            <input
+              className="search-input"
+              type="text"
+              placeholder="Search order ID, customer, or status..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="table-wrapper">
+            <table className="data-table">
+
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Customer</th>
+                  <th>Total Amount</th>
+                  <th>Order Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredOrders.length > 0 ? (
+                  filteredOrders.map((order) => {
+                    const status =
+                      order.order_status || order.status || "Pending";
+
+                    const isCompleted =
+                      status.toLowerCase() === "paid" ||
+                      status.toLowerCase() === "completed";
+
+                    return (
+                      <tr key={order.order_id}>
+                        <td>#{order.order_id}</td>
+
+                        <td>
+                          {order.customer_name ||
+                            order.fullname ||
+                            "Unknown Customer"}
+                        </td>
+
+                        <td>
+                          ₱{Number(order.total_amount || 0).toFixed(2)}
+                        </td>
+
+                        <td>{order.order_date}</td>
+
+                        <td>
+                          <span
+                            className={`orders-status ${
+                              isCompleted
+                                ? "orders-status-completed"
+                                : "orders-status-pending"
+                            }`}
+                          >
+                            {status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: "center" }}>
+                      No orders found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+
+            </table>
+          </div>
 
         </section>
 
