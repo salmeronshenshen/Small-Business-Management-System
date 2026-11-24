@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 // PRODUCT IMAGES
 const productImages = {
-  "Lip Tint": "/images/products/lip-tint.jpg",
+  "Lip Tint": "/images/products/liptint.jpg",
   "Lip Gloss": "/images/products/lip-gloss.jpg",
   "Mini Shoulder Bag": "/images/products/mini_shoulder_bag.jpg",
   "Tote Bag": "/images/products/tote-bag.jpg",
